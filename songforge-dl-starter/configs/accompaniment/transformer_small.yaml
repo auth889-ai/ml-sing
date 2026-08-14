@@ -1,0 +1,6 @@
+vocab_size: 2048
+d_model: 256
+nhead: 8
+num_layers: 6
+max_seq_len: 2048
+style_vocab_size: 256

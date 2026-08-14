@@ -1,0 +1,7 @@
+seed: 42
+device: cpu
+batch_size: 2
+learning_rate: 0.0003
+steps: 5
+grad_clip: 1.0
+amp: false

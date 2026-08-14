@@ -1,0 +1,8 @@
+sample_rate: 24000
+channels: 1
+base_channels: 32
+latent_dim: 64
+strides: [2, 4, 5, 5]
+num_quantizers: 4
+codebook_size: 256
+commitment_weight: 0.25

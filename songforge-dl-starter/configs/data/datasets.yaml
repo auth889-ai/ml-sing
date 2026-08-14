@@ -1,0 +1,191 @@
+default_order:
+  - babyslakh
+  - slakh2100
+  - lakh_midi
+  - gtsinger
+  - mtg_jamendo
+  - nsynth
+
+global_split_policy:
+  track_disjoint: true
+  singer_disjoint_for_singing_eval: true
+  duplicate_detection:
+    audio_sha256: true
+    midi_sha256: true
+    canonical_track_id_required: true
+  manifest_required_fields:
+    - id
+    - path
+    - split
+    - source
+    - license
+    - track_id
+
+datasets:
+  babyslakh:
+    name: BabySlakh
+    role: debug_multitrack_audio_midi
+    source_url: https://zenodo.org/records/4603844
+    citation_url: https://www.slakh.com/
+    license:
+      name: CC-BY-4.0
+      url: https://creativecommons.org/licenses/by/4.0/
+      commercial_allowed: true
+      requires_user_acceptance: false
+      notes: Cite Slakh/BabySlakh; preserve dataset attribution in model cards.
+    access:
+      method: zenodo
+      gated: false
+      estimated_size: 883 MB zip
+      download_url: https://zenodo.org/records/4603844/files/babyslakh_16k.zip?download=1
+      colab_commands:
+        - mkdir -p "$SONGFORGE_DATA/raw/babyslakh"
+        - wget -O "$SONGFORGE_DATA/raw/babyslakh/babyslakh_16k.zip" "https://zenodo.org/records/4603844/files/babyslakh_16k.zip?download=1"
+        - unzip -q "$SONGFORGE_DATA/raw/babyslakh/babyslakh_16k.zip" -d "$SONGFORGE_DATA/raw/babyslakh"
+    split_policy:
+      canonical_track_id: Track directory name.
+      recommended: Use for M02/M03 smoke pipelines only; split by TrackXXXXX, never by segment.
+      leakage_notes: Full Slakh has known duplicate MIDI caveats; prefer redux/omitted-aware splits for transcription.
+    integrity:
+      checksum_type: md5
+      checksum: ea1797fc57689a0e33c759c17a2292f5
+      local_manifest_requires_sha256: true
+
+  slakh2100:
+    name: Slakh2100-redux
+    role: aligned_multitrack_audio_midi
+    source_url: https://zenodo.org/records/4599666
+    citation_url: https://www.slakh.com/
+    license:
+      name: CC-BY-4.0
+      url: https://creativecommons.org/licenses/by/4.0/
+      commercial_allowed: true
+      requires_user_acceptance: false
+      notes: Cite Slakh; avoid omitted duplicate-MIDI tracks for transcription-style experiments.
+    access:
+      method: zenodo
+      gated: false
+      estimated_size: 104.3 GB compressed, about 500 GB wav-expanded
+      download_url: https://zenodo.org/records/4599666/files/slakh2100_flac_redux.tar.gz?download=1
+      colab_commands:
+        - mkdir -p "$SONGFORGE_DATA/raw/slakh2100"
+        - wget -O "$SONGFORGE_DATA/raw/slakh2100/slakh2100_flac_redux.tar.gz" "https://zenodo.org/records/4599666/files/slakh2100_flac_redux.tar.gz?download=1"
+    split_policy:
+      canonical_track_id: Track directory name.
+      recommended: Use Zenodo redux contents and omit duplicated MIDI tracks when training transcription or MIDI-conditioned models.
+      leakage_notes: Do not split stems or segments from the same TrackXXXXX across train/val/test.
+    integrity:
+      checksum_type: md5
+      checksum: f4b71b6c45ac9b506f59788456b3f0c4
+      local_manifest_requires_sha256: true
+
+  lakh_midi:
+    name: Lakh MIDI Dataset v0.1
+    role: symbolic_music_pretraining
+    source_url: https://colinraffel.com/projects/lmd/
+    citation_url: https://colinraffel.com/projects/lmd/
+    license:
+      name: CC-BY-4.0 dataset distribution
+      url: https://creativecommons.org/licenses/by/4.0/
+      commercial_allowed: review_required
+      requires_user_acceptance: false
+      notes: MIDI attribution/copyright meta-events are inconsistent; preserve metadata and get legal review before commercial deployment.
+    access:
+      method: official_project_page
+      gated: false
+      estimated_size: varies by archive
+      download_url: https://colinraffel.com/projects/lmd/
+      colab_commands:
+        - echo "Open the official Lakh page and download the selected archive into $SONGFORGE_DATA/raw/lakh_midi."
+    split_policy:
+      canonical_track_id: MIDI file hash plus any matched MSD identifier.
+      recommended: Hash MIDI bytes and keep matched alternate versions in one split.
+      leakage_notes: Deduplicate exact MIDI files before token-model training.
+    integrity:
+      checksum_type: provider_or_local_sha256
+      checksum: null
+      local_manifest_requires_sha256: true
+
+  gtsinger:
+    name: GTSinger
+    role: singing_voice_synthesis
+    source_url: https://huggingface.co/datasets/YGGYY/GTSinger
+    citation_url: https://github.com/AaronZ345/GTSinger
+    license:
+      name: CC-BY-NC-SA-4.0
+      url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+      commercial_allowed: false
+      requires_user_acceptance: true
+      notes: Non-commercial ShareAlike dataset. User must accept upstream terms before download.
+    access:
+      method: huggingface
+      gated: false
+      estimated_size: 1B-10B samples listed on Hugging Face card
+      download_url: https://huggingface.co/datasets/YGGYY/GTSinger
+      colab_commands:
+        - pip install -q huggingface_hub
+        - huggingface-cli download YGGYY/GTSinger --repo-type dataset --local-dir "$SONGFORGE_DATA/raw/gtsinger"
+    split_policy:
+      canonical_track_id: Dataset song/utterance id from annotations.
+      recommended: Maintain singer-disjoint validation/test sets for generalization experiments.
+      leakage_notes: Do not put any singer_id in both train and validation/test for singer-disjoint runs.
+    integrity:
+      checksum_type: huggingface_xet_or_local_sha256
+      checksum: null
+      local_manifest_requires_sha256: true
+
+  mtg_jamendo:
+    name: MTG-Jamendo
+    role: tagged_full_music_audio
+    source_url: https://github.com/MTG/mtg-jamendo-dataset
+    citation_url: https://github.com/MTG/mtg-jamendo-dataset
+    license:
+      name: Per-track Creative Commons; metadata CC-BY-NC-SA-4.0
+      url: https://github.com/MTG/mtg-jamendo-dataset
+      commercial_allowed: conditional
+      requires_user_acceptance: true
+      notes: Preserve each track license from audio_licenses.txt; repository states non-commercial research/academic use for the dataset package.
+    access:
+      method: official_download_script
+      gated: false
+      estimated_size: 46 GB low-quality mood/theme subset to 508 GB full-quality raw_30s audio
+      download_url: https://github.com/MTG/mtg-jamendo-dataset
+      colab_commands:
+        - git clone https://github.com/MTG/mtg-jamendo-dataset.git "$SONGFORGE_DATA/raw/mtg-jamendo-metadata"
+        - python "$SONGFORGE_DATA/raw/mtg-jamendo-metadata/scripts/download/download.py" --dataset autotagging_moodtheme --type audio-low "$SONGFORGE_DATA/raw/mtg_jamendo" --unpack --remove
+    split_policy:
+      canonical_track_id: Jamendo track id.
+      recommended: Use official artist-aware splits and retain license per track in manifests.
+      leakage_notes: Do not use segments from the same Jamendo track in multiple splits.
+    integrity:
+      checksum_type: official_download_script_validation
+      checksum: null
+      local_manifest_requires_sha256: true
+
+  nsynth:
+    name: NSynth
+    role: instrument_note_audio_pretraining
+    source_url: https://magenta.tensorflow.org/datasets/nsynth
+    citation_url: https://magenta.tensorflow.org/datasets/nsynth
+    license:
+      name: CC-BY-4.0
+      url: https://creativecommons.org/licenses/by/4.0/
+      commercial_allowed: true
+      requires_user_acceptance: false
+      notes: Useful for timbre/audio pretraining, not a full-song dataset.
+    access:
+      method: tensorflow_datasets_or_magenta_archives
+      gated: false
+      estimated_size: about 300k four-second notes
+      download_url: https://magenta.tensorflow.org/datasets/nsynth
+      colab_commands:
+        - pip install -q tensorflow-datasets
+        - python -c "import tensorflow_datasets as tfds; tfds.load('nsynth', data_dir='$SONGFORGE_DATA/tfds')"
+    split_policy:
+      canonical_track_id: NSynth note id.
+      recommended: Preserve official train/valid/test instrument-disjoint split.
+      leakage_notes: Do not merge official valid/test instruments into train.
+    integrity:
+      checksum_type: tfds_registered_checksums
+      checksum: null
+      local_manifest_requires_sha256: true
