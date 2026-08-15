@@ -199,9 +199,38 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
     curve = read_curve(output_dir / "training_curves.csv") if not missing else []
     rvq = analyze_rvq_history(output_dir / "rvq_history.jsonl")
 
+    # Judge the trend on windowed means, not on the two endpoint batches.
+    #
+    # Per-step loss is a single batch of `batch_size` random segments drawn from
+    # heterogeneous real music, so it is extremely noisy: the first Colab run on
+    # BabySlakh spanned 0.0076 to 1.1865, a 156x spread. Comparing curve[0] to
+    # curve[-1] therefore samples noise rather than learning, and reported a
+    # rising loss on a run whose windowed L1 fell 38% and MR-STFT fell 32%.
+    # Averaging the first and last decile is the standard way to read such a
+    # curve and uses far more of the evidence than two points.
+    window = max(len(curve) // 10, 1) if curve else 0
+
+    def _window_mean(rows: list[dict[str, float]], key: str) -> float | None:
+        values = [row[key] for row in rows if key in row]
+        return sum(values) / len(values) if values else None
+
     first_loss = curve[0]["loss"] if curve else None
     final_loss = curve[-1]["loss"] if curve else None
-    loss_decreased = first_loss is not None and final_loss is not None and final_loss < first_loss
+    first_window = curve[:window]
+    final_window = curve[-window:] if window else []
+
+    first_window_loss = _window_mean(first_window, "loss")
+    final_window_loss = _window_mean(final_window, "loss")
+    first_window_l1 = _window_mean(first_window, "waveform_l1")
+    final_window_l1 = _window_mean(final_window, "waveform_l1")
+    first_window_mrstft = _window_mean(first_window, "mrstft")
+    final_window_mrstft = _window_mean(final_window, "mrstft")
+
+    loss_decreased = (
+        first_window_loss is not None
+        and final_window_loss is not None
+        and final_window_loss < first_window_loss
+    )
 
     # Trust the tracked history for the collapse verdict when it exists; fall
     # back to the final evaluation metrics otherwise.
@@ -218,6 +247,13 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
         "missing_artifacts": missing,
         "first_loss": first_loss,
         "final_loss": final_loss,
+        "loss_window_steps": window,
+        "first_window_loss": first_window_loss,
+        "final_window_loss": final_window_loss,
+        "first_window_waveform_l1": first_window_l1,
+        "final_window_waveform_l1": final_window_l1,
+        "first_window_mrstft": first_window_mrstft,
+        "final_window_mrstft": final_window_mrstft,
         "loss_decreased": loss_decreased,
         "rvq_collapse_suspected": collapse,
         "rvq_history": rvq,
@@ -244,6 +280,13 @@ def collect_required_metrics(acceptance: dict[str, Any]) -> dict[str, Any]:
     return {
         "initial_train_loss": acceptance.get("first_loss"),
         "final_train_loss": acceptance.get("final_loss"),
+        "loss_window_steps": acceptance.get("loss_window_steps"),
+        "initial_train_loss_windowed": acceptance.get("first_window_loss"),
+        "final_train_loss_windowed": acceptance.get("final_window_loss"),
+        "initial_waveform_l1_windowed": acceptance.get("first_window_waveform_l1"),
+        "final_waveform_l1_windowed": acceptance.get("final_window_waveform_l1"),
+        "initial_mrstft_windowed": acceptance.get("first_window_mrstft"),
+        "final_mrstft_windowed": acceptance.get("final_window_mrstft"),
         "train_waveform_l1": train.get("waveform_l1"),
         "train_mrstft": train.get("mrstft"),
         "train_snr_db": train.get("snr_db"),
@@ -339,9 +382,16 @@ def write_experiment_log(path: Path, report: dict[str, Any]) -> None:
             "",
             "| Metric | Value |",
             "| --- | --- |",
-            f"| Initial train loss | `{fmt(metrics['initial_train_loss'])}` |",
-            f"| Final train loss | `{fmt(metrics['final_train_loss'])}` |",
-            f"| Loss decreased | `{acceptance['loss_decreased']}` |",
+            f"| Initial train loss (single batch, noisy) | `{fmt(metrics['initial_train_loss'])}` |",
+            f"| Final train loss (single batch, noisy) | `{fmt(metrics['final_train_loss'])}` |",
+            f"| Loss window (steps averaged each end) | `{fmt(metrics['loss_window_steps'])}` |",
+            f"| Initial train loss (windowed mean) | `{fmt(metrics['initial_train_loss_windowed'])}` |",
+            f"| Final train loss (windowed mean) | `{fmt(metrics['final_train_loss_windowed'])}` |",
+            f"| Initial waveform L1 (windowed mean) | `{fmt(metrics['initial_waveform_l1_windowed'])}` |",
+            f"| Final waveform L1 (windowed mean) | `{fmt(metrics['final_waveform_l1_windowed'])}` |",
+            f"| Initial MR-STFT (windowed mean) | `{fmt(metrics['initial_mrstft_windowed'])}` |",
+            f"| Final MR-STFT (windowed mean) | `{fmt(metrics['final_mrstft_windowed'])}` |",
+            f"| Loss decreased (windowed) | `{acceptance['loss_decreased']}` |",
             f"| Train waveform L1 | `{fmt(metrics['train_waveform_l1'])}` |",
             f"| Train MR-STFT | `{fmt(metrics['train_mrstft'])}` |",
             f"| Validation waveform L1 | `{fmt(metrics['validation_waveform_l1'])}` |",
