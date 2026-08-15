@@ -1,4 +1,5 @@
 import torch
+
 from songforge.models.singer.diffusion import SingerDenoiser
 
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import math
+
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 
 def sinusoidal_timestep_embedding(t: torch.Tensor, dim: int) -> torch.Tensor:

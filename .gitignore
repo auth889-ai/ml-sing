@@ -1,0 +1,6 @@
+.DS_Store
+
+# Colab upload archive is a build artifact, rebuild it with the zip command in
+# songforge-dl-starter/docs/COLAB_REMOTE_TRAINING.md
+songforge-colab.zip
+*.zip

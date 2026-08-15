@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import hashlib
 import json
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 
 @dataclass(frozen=True)
@@ -61,5 +61,5 @@ def assert_singer_disjoint(records: Iterable[AudioRecord], eval_splits: set[str]
 
     overlap = train_singers.intersection(eval_singers)
     if overlap:
-        singer = sorted(overlap)[0]
+        singer = min(overlap)
         raise ValueError(f"Singer leakage: {singer} appears in train and {eval_singers[singer]}")

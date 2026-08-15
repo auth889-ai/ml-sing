@@ -1,5 +1,11 @@
 import pytest
-from songforge.data.manifest import AudioRecord, assert_no_track_leakage, assert_singer_disjoint, stable_id
+
+from songforge.data.manifest import (
+    AudioRecord,
+    assert_no_track_leakage,
+    assert_singer_disjoint,
+    stable_id,
+)
 
 
 def test_stable_id_is_stable():

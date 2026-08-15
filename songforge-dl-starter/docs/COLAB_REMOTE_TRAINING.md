@@ -6,17 +6,44 @@ This project should not fetch huge datasets or train flagship models on the loca
 
 Codex cannot sign into `anastasiasaat81@gmail.com` or operate that Google Colab account from this environment. The notebook is prepared so the account owner can run the cells in Colab after authorizing Drive and any dataset provider credentials.
 
+## Getting the Code onto Colab
+
+The notebook supports two delivery modes, set by `SETUP_MODE` in cell 1.
+
+### `SETUP_MODE = "zip"` (default, no GitHub account needed)
+
+1. On the workstation, build the archive from the repository root:
+
+   ```bash
+   zip -r songforge-colab.zip songforge-dl-starter \
+     -x '*/.venv/*' '*/__pycache__/*' '*.pyc' '*/.pytest_cache/*' '*/.ruff_cache/*' \
+        '*.egg-info/*' '*/outputs/*' '*/data/raw/*' '*/data/processed/*' '*/checkpoints/*' \
+        '*.pt' '*.wav' '*.DS_Store'
+   ```
+
+2. Upload `songforge-colab.zip` to Drive at `MyDrive/songforge-dl/`.
+3. Run the notebook. Cell 3 extracts it to `/content/songforge`.
+
+The project is extracted to Colab local disk, not Drive. Drive I/O is slow and `pip install -e`
+against a Drive path is unreliable. Only datasets, outputs, and checkpoints live on Drive.
+
+### `SETUP_MODE = "git"`
+
+Only works once the repository actually exists and the branch contains the M03 code. Set
+`GITHUB_TOKEN` in cell 1 for a private repo, and clear the cell output afterwards. If the clone
+fails, cell 3 now stops with an explicit error instead of letting later cells run from `/content`.
+
 ## Colab Steps
 
 1. Open Colab from the target Google account.
 2. Upload or open `notebooks/songforge_colab_remote.ipynb`.
-3. Set `REPO_URL`, `BRANCH`, `SONGFORGE_DATA`, and the dataset choices in the first code cell.
-4. Run the setup cells. They clone/pull the repo into Colab, mount Google Drive, install dependencies, and validate the dataset registry.
+3. Set `SETUP_MODE`, `DRIVE_ROOT`, and the dataset choices in cell 1.
+4. Run cells 2-4: mount Drive, place the code, install dependencies, run the M00 and M01 gates.
 5. Accept dataset terms in the notebook before running any GTSinger or MTG-Jamendo download cell.
 6. Run only milestone-appropriate jobs:
    - M00: `pytest -q`
    - M01: `python scripts/validate_dataset_registry.py`
-   - M02/M03 later: preprocessing and codec trainers after they are implemented
+   - M03: tiny codec smoke training with `scripts/train_codec.py`
 
 ## Storage Layout
 
@@ -36,3 +63,59 @@ Keep raw datasets and checkpoints out of git. The repository `.gitignore` alread
 ## Push Results
 
 Only push source code, configs, docs, small manifests, and experiment metadata. Do not push raw datasets, generated WAV/MP3/FLAC files, or large checkpoints.
+
+## M03 Final Acceptance
+
+After downloading or mounting a small approved real-music subset, run the acceptance script:
+
+```bash
+python scripts/colab_m03_acceptance.py \
+  --config configs/codec/codec_m03_tiny.yaml \
+  --audio-glob "$SONGFORGE_DATA/raw/babyslakh/**/*.wav" \
+  --output-dir "$DRIVE_ROOT/outputs/codec_m03_acceptance" \
+  --steps 600
+```
+
+### Why `--steps 600` and not 80
+
+The RVQ codebook is seeded from real encoder outputs on the first training batch, but the encoder
+initially emits latents that barely vary across time, so the codebook still collapses to a handful
+of entries during early training. It recovers only once the encoder learns time-varying latents.
+
+Measured on a CPU dry run with the tiny config:
+
+| Step | Unique codes | Perplexity | Utilization |
+| ---: | ---: | ---: | ---: |
+| 0 | 94 | 56.8 | 0.73 |
+| 50 | 1 | 1.0 | 0.01 |
+| 150 | 6 | 1.3 | 0.05 |
+| 400 | 44 | 27.6 | 0.34 |
+
+`validate_acceptance` fails the run when utilization `< 0.05` or perplexity `< 2.0`, so a
+budget of 80 steps fails its own gate even though the codec is training correctly. Use 600 or
+more. On a Colab GPU this is still a short run.
+
+Expected Drive artifacts:
+
+- `original.wav`
+- `reconstructed.wav`
+- `config.yaml`
+- `checkpoint.pt`
+- `checkpoint_last.pt`
+- `optimizer_state.pt`
+- `training_curves.csv`
+- `metrics.jsonl`
+- `train_metrics.json`
+- `validation_metrics.json`
+- `metrics_summary.json`
+- `compression_stats.json`
+- `experiment_metadata.json`
+- `m03_acceptance_report.json`
+
+Expected repo update:
+
+- `docs/EXPERIMENT_LOG.md`
+
+M03 passes only after Colab CUDA tests pass, AMP path passes, real-music train/validation runs, loss decreases, checkpoint resume works, WAV artifacts open, RVQ does not obviously collapse, and artifacts persist in Drive.
+
+The current M03 codec records about 120 latent frames/sec at 24 kHz. Keep that as the M03 baseline; do not change it during acceptance.

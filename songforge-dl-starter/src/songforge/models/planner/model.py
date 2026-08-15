@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+
 import torch
 from torch import nn
 
@@ -44,7 +45,7 @@ class SongPlannerTransformer(nn.Module):
                 nn.init.zeros_(module.bias)
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        b, t = tokens.shape
+        _, t = tokens.shape
         if t > self.max_seq_len:
             raise ValueError("Sequence longer than max_seq_len")
         positions = torch.arange(t, device=tokens.device).unsqueeze(0)
