@@ -5,64 +5,26 @@ import json
 import wave
 from pathlib import Path
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-
-def _read_with_soundfile(path: Path) -> tuple[torch.Tensor, int]:
-    import soundfile as sf
-
-    audio, sr = sf.read(path, always_2d=True, dtype="float32")
-    tensor = torch.from_numpy(audio).t().contiguous()
-    return tensor, int(sr)
-
-
-def _read_with_torchaudio(path: Path) -> tuple[torch.Tensor, int]:
-    import torchaudio
-
-    audio, sr = torchaudio.load(str(path))
-    return audio.float(), int(sr)
-
-
-def _read_with_wave(path: Path) -> tuple[torch.Tensor, int]:
-    with wave.open(str(path), "rb") as f:
-        channels = f.getnchannels()
-        sample_width = f.getsampwidth()
-        sr = f.getframerate()
-        frames = f.readframes(f.getnframes())
-    if sample_width != 2:
-        raise RuntimeError("stdlib WAV fallback supports 16-bit PCM only")
-    pcm = np.frombuffer(frames, dtype=np.int16).astype("float32") / 32768.0
-    audio = torch.from_numpy(pcm.reshape(-1, channels).T.copy())
-    return audio, int(sr)
+from .dsp import resample_waveform, to_channels
+from .media import decode_audio
 
 
 def load_audio(path: str | Path, sample_rate: int, channels: int = 1) -> torch.Tensor:
-    path = Path(path)
-    try:
-        audio, sr = _read_with_soundfile(path)
-    except (ImportError, OSError, RuntimeError, ValueError):
-        try:
-            audio, sr = _read_with_torchaudio(path)
-        except (ImportError, OSError, RuntimeError, ValueError):
-            audio, sr = _read_with_wave(path)
+    """Decode to ``[channels, samples]`` at ``sample_rate``, clamped to [-1, 1].
 
-    if channels == 1 and audio.size(0) > 1:
-        audio = audio.mean(dim=0, keepdim=True)
-    elif channels > 1 and audio.size(0) == 1:
-        audio = audio.repeat(channels, 1)
-    elif audio.size(0) != channels:
-        audio = audio[:channels]
-
-    if sr != sample_rate:
-        try:
-            import torchaudio.functional as AF
-
-            audio = AF.resample(audio, sr, sample_rate)
-        except Exception as exc:
-            raise RuntimeError("Resampling requires torchaudio when source sample rate differs") from exc
+    Decoding and resampling are delegated to `songforge.data.media` and
+    `songforge.data.dsp` so training and M02 preprocessing share one
+    implementation. The resampler is pure torch, so this no longer requires
+    torchaudio to be installed when the source rate differs from the target.
+    """
+    audio, source_rate = decode_audio(path)
+    audio = to_channels(audio, channels)
+    if source_rate != sample_rate:
+        audio = resample_waveform(audio, source_rate, sample_rate)
     return audio.clamp(-1.0, 1.0)
 
 

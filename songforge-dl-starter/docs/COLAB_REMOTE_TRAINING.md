@@ -43,7 +43,50 @@ fails, cell 3 now stops with an explicit error instead of letting later cells ru
 6. Run only milestone-appropriate jobs:
    - M00: `pytest -q`
    - M01: `python scripts/validate_dataset_registry.py`
-   - M03: tiny codec smoke training with `scripts/train_codec.py`
+   - M02: `python scripts/colab_m02_acceptance.py`
+   - M03: tiny codec smoke training with `scripts/train_codec.py` (experimental spike)
+
+## Milestone Status
+
+M00 PASS, M01 PASS, M02 is the milestone under test. M03 codec code exists and runs but was
+built before M02; it is preserved as an **experimental spike** and is not accepted. M04+ has
+not started. The notebook labels the M03 cell accordingly.
+
+## M02 Acceptance
+
+M02 PASS requires a real approved audio subset to complete:
+
+```text
+raw audio -> validation -> preprocessing -> segmentation
+          -> canonical manifest -> train/val/test split -> Drive persistence
+```
+
+```bash
+python scripts/colab_m02_acceptance.py \
+  --dataset-id babyslakh \
+  --audio-dir "$SONGFORGE_DATA/raw/babyslakh" \
+  --output-dir "$SONGFORGE_DATA/processed/babyslakh_m02" \
+  --limit-files 24 \
+  --split-mode song
+```
+
+Rehearse the same pipeline with no download using `--synthetic`. That mode reports
+`synthetic: true` and is deliberately **not** an M02 pass.
+
+Expected Drive artifacts under `--output-dir`:
+
+- `manifests/all.jsonl`, `manifests/train.jsonl`, `manifests/val.jsonl`, `manifests/test.jsonl`
+- `manifests/manifest_summary.json`
+- `audio/<track_id>/<record_id>.wav`
+- `preprocess_report.json`
+- `m02_acceptance_report.json`
+
+Expected repo update: `docs/EXPERIMENT_LOG_M02.md`.
+
+M02 passes only when every artifact is present, the manifest round-trips, provenance and
+licence survive on every record, and there is no song leakage, singer leakage, or cross-split
+duplicate audio. Preprocessing settings are recorded in each record, so the run is
+reproducible from the manifest alone. See `docs/MANIFEST_SCHEMA.md`.
 
 ## Storage Layout
 
@@ -64,7 +107,12 @@ Keep raw datasets and checkpoints out of git. The repository `.gitignore` alread
 
 Only push source code, configs, docs, small manifests, and experiment metadata. Do not push raw datasets, generated WAV/MP3/FLAC files, or large checkpoints.
 
-## M03 Final Acceptance
+## M03 Codec Spike (not an accepted milestone)
+
+M03 predates M02 and is kept as an experimental spike. The commands below still run and the
+artifacts are still useful, but a green result here does **not** mark M03 accepted. Official
+M03 acceptance happens after M02 is signed off, and should train from the M02 manifest
+(`--manifest .../manifests/train.jsonl`) rather than a raw glob.
 
 After downloading or mounting a small approved real-music subset, run the acceptance script:
 

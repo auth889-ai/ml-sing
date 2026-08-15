@@ -30,6 +30,66 @@ M01 keeps dataset access explicit, license-aware, and reproducible. The canonica
 - For Slakh, respect redux/omitted duplicate-MIDI guidance before transcription-style training.
 - MTG-Jamendo manifests must retain the per-track license from `audio_licenses.txt`.
 
+## M02 Preprocessing
+
+M02 turns approved raw audio into the canonical training manifest documented in
+`docs/MANIFEST_SCHEMA.md`. The pipeline is:
+
+```text
+raw audio -> media validation -> decode -> channel policy -> resample
+          -> amplitude normalization -> deterministic segmentation
+          -> silence/clipping filtering -> canonical manifest -> split assignment
+```
+
+Run it locally on a small sample, or on Colab for anything real:
+
+```bash
+python scripts/preprocess_dataset.py \
+  --dataset-id babyslakh \
+  --input-dir "$SONGFORGE_DATA/raw/babyslakh" \
+  --output-dir "$SONGFORGE_DATA/processed/babyslakh_m02" \
+  --config configs/data/preprocess_m02.yaml
+```
+
+Settings live in `configs/data/preprocess_m02.yaml` and are copied into every record, so a
+manifest describes how it was built.
+
+### Guarantees
+
+- **Deterministic.** Same inputs and config produce identical ids, hashes, and segment
+  boundaries on any machine. Files are processed in sorted order, and the resampler is a
+  pure-torch windowed sinc rather than whichever optional audio library is installed.
+- **Corrupt input is skipped, not fatal.** Unreadable, empty, and too-short files are
+  recorded in `preprocess_report.json` and excluded.
+- **Silence and clipping are measured.** Silent segments are dropped by default; clipping is
+  recorded per segment and, with `drop_clipped`, rejects the source file.
+- **Licences propagate.** Every record carries dataset provenance and licence, enforced by
+  `assert_provenance_complete`.
+- **Splits cannot leak.** Splits are assigned to whole songs (or whole singers), never to
+  individual segments.
+
+### Splitting
+
+`songforge.data.splits` assigns splits to groups, not segments:
+
+- `mode: song` — song-disjoint. The default.
+- `mode: singer` — singer-disjoint, required for singing generalization experiments. Songs
+  stay disjoint too, since a song belongs to one performer.
+
+Assignment is a deterministic quota over a seeded hash ordering, so it is reproducible,
+independent of input order, and still fills every split on small debug corpora.
+
+### Duplicate detection
+
+`audio_sha256` (decoded content) and `source_sha256` (file bytes) are recorded on every
+record. `assert_no_cross_split_duplicates` fails when identical audio appears in two splits.
+Near-duplicate detection is a later milestone and extends `duplicate_report`.
+
+### Testing without downloads
+
+`songforge.data.fixtures` generates Slakh-shaped and GTSinger-shaped synthetic corpora plus
+corrupt, empty, silent, and clipped files, so the M02 test suite needs no dataset download.
+
 ## Remote Download Policy
 
 Do not download large or gated datasets on the local workstation. Use the Colab workflow in `docs/COLAB_REMOTE_TRAINING.md` and keep `SONGFORGE_DATA` on Google Drive or Colab storage.

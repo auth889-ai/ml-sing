@@ -1,0 +1,51 @@
+# M02 canonical audio preprocessing.
+#
+# These values are recorded inside every manifest record's `preprocessing` block,
+# so changing them changes the dataset identity. Bump the output directory rather
+# than silently re-running with different settings on top of old artifacts.
+
+preprocess:
+  # Target format. 24 kHz mono matches the M03 codec input contract.
+  sample_rate: 24000
+  channels: 1
+  channel_policy: mean        # mean | first
+
+  # Deterministic segmentation. hop_seconds: null means non-overlapping.
+  segment_seconds: 2.0
+  hop_seconds: null
+  pad_final_partial: false
+
+  # Amplitude handling.
+  normalize: peak             # peak | rms | none
+  target_dbfs: -1.0
+  max_gain_db: 30.0           # stops near-silent input being amplified into noise
+
+  # Silence rejection.
+  silence_threshold_dbfs: -60.0
+  drop_silent: true
+
+  # Clipping. Detected and recorded per segment; drop_clipped rejects whole
+  # source files whose pre-normalization clipping exceeds max_clipping_ratio.
+  clipping_threshold: 0.999
+  max_clipping_ratio: 0.01
+  drop_clipped: false
+
+  # Source-duration gate.
+  min_source_seconds: 0.5
+  max_source_seconds: null
+
+  # Resampler quality. Pure-torch windowed sinc, identical on every machine.
+  resample_filter_width: 6
+  resample_rolloff: 0.99
+
+  write_audio: true
+  compute_source_hash: true
+
+# Split assignment runs after preprocessing, over whole groups.
+splits:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  seed: 42
+  mode: song                  # song = song-disjoint, singer = singer-disjoint
+  strategy: quota             # quota = balanced, hash = pure hash bucketing
