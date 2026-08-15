@@ -13,7 +13,16 @@ def save_checkpoint(
     step: int,
     config: dict[str, Any],
     metrics: dict[str, float] | None = None,
+    run_id: str | None = None,
+    run_label: str | None = None,
 ) -> None:
+    """Save weights plus the run identity that produced them.
+
+    `run_id` and `config_fingerprint` let a later resume prove it is continuing
+    the same experiment rather than splicing an unrelated one.
+    """
+    from .run import config_fingerprint
+
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(
@@ -23,6 +32,9 @@ def save_checkpoint(
             "step": step,
             "config": config,
             "metrics": metrics or {},
+            "run_id": run_id,
+            "run_label": run_label,
+            "config_fingerprint": config_fingerprint(config),
         },
         path,
     )

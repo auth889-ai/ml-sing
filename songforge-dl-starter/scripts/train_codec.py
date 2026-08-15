@@ -24,6 +24,12 @@ from songforge.evaluation.audio import (
 from songforge.losses.audio import codec_reconstruction_loss
 from songforge.models.codec import NeuralCodec
 from songforge.training.checkpoint import load_checkpoint, save_checkpoint
+from songforge.training.run import (
+    assert_fresh_run_dir,
+    assert_resume_compatible,
+    new_run_id,
+    write_run_manifest,
+)
 from songforge.training.seed import seed_everything
 
 
@@ -82,6 +88,37 @@ def resolve_paths(args: argparse.Namespace) -> tuple[list[Path], list[Path], str
     paths = read_audio_paths(args.manifest, args.audio_glob)
     train_paths, val_paths = split_paths(paths, float(args.val_fraction))
     return train_paths, val_paths, "manifest" if args.manifest else "audio_glob"
+
+
+@torch.no_grad()
+def evaluate_validation_probe(
+    model: NeuralCodec,
+    dataset: AudioSegmentDataset,
+    device: torch.device,
+    max_items: int = 64,
+) -> dict[str, float]:
+    """Reconstruction quality on a fixed prefix of the held-out validation set.
+
+    Called once before the first optimizer step and once after training, on the
+    same segments, so the before/after pair is a like-for-like measurement of
+    what training actually bought. `recon_loss` is waveform L1 + MR-STFT, the
+    reconstruction part of the training objective (no VQ term).
+    """
+    if len(dataset) == 0:
+        return {}
+    was_training = model.training
+    model.eval()
+    rows = []
+    for index in range(min(len(dataset), max_items)):
+        audio = dataset[index].unsqueeze(0).to(device)
+        rows.append(reconstruction_metrics(model(audio)["reconstruction"], audio))
+    if was_training:
+        model.train()
+
+    metrics = {key: sum(row[key] for row in rows) / len(rows) for key in rows[0]}
+    metrics["recon_loss"] = metrics["waveform_l1"] + metrics["mrstft"]
+    metrics["segments"] = float(len(rows))
+    return metrics
 
 
 @torch.no_grad()
@@ -201,6 +238,13 @@ def train(args: argparse.Namespace) -> None:
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats()
     output_dir = Path(args.output_dir)
+
+    # Experiment isolation: a fresh run may not append to another run's curves.
+    # Only an explicit --resume may continue an existing directory, and only
+    # when the checkpoint came from a compatible config.
+    if not args.resume:
+        assert_fresh_run_dir(output_dir)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "config.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
@@ -213,9 +257,27 @@ def train(args: argparse.Namespace) -> None:
         weight_decay=float(training.get("weight_decay", 0.0)),
     )
     start_step = 0
+    run_id = new_run_id(args.run_label)
+    resumed_run_id = None
     if args.resume:
         checkpoint = load_checkpoint(args.resume, model, optimizer, map_location=device)
+        resumed_run_id = assert_resume_compatible(checkpoint, config)
+        if resumed_run_id:
+            run_id = resumed_run_id
         start_step = int(checkpoint.get("step", 0)) + 1
+
+    write_run_manifest(
+        output_dir,
+        run_id=run_id,
+        run_label=args.run_label,
+        config=config,
+        resumed_from=args.resume,
+        resumed_run_id=resumed_run_id,
+        start_step=start_step,
+        device=str(device),
+        amp=amp,
+    )
+    print(f"run_id: {run_id}" + (f" (resumed from {resumed_run_id})" if resumed_run_id else ""))
 
     train_paths, val_paths, path_source = resolve_paths(args)
     print(f"data source: {path_source} ({len(train_paths)} train / {len(val_paths)} val files)")
@@ -227,6 +289,25 @@ def train(args: argparse.Namespace) -> None:
         channels=kwargs["channels"],
         segment_samples=int(training.get("segment_samples", kwargs["sample_rate"])),
     )
+    val_dataset = AudioSegmentDataset(
+        paths=val_paths,
+        sample_rate=kwargs["sample_rate"],
+        channels=kwargs["channels"],
+        segment_samples=int(training.get("segment_samples", kwargs["sample_rate"])),
+    )
+    # Measure held-out quality before a single optimizer step, on the same
+    # segments that will be re-measured after training.
+    validation_before = evaluate_validation_probe(model, val_dataset, device, args.validation_probe)
+    if validation_before:
+        print(
+            f"validation probe BEFORE ({int(validation_before['segments'])} held-out segments): "
+            f"recon_loss={validation_before['recon_loss']:.5f} "
+            f"l1={validation_before['waveform_l1']:.5f} mrstft={validation_before['mrstft']:.5f}"
+        )
+    (output_dir / "validation_before.json").write_text(
+        json.dumps(validation_before, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
     loader = DataLoader(dataset, batch_size=int(training.get("batch_size", 2)), shuffle=True, drop_last=False)
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
     steps = int(args.steps or training.get("steps", 20))
@@ -278,6 +359,8 @@ def train(args: argparse.Namespace) -> None:
                 "mrstft": float(losses["mrstft"].detach().cpu().item()),
                 "vq_loss": float(losses["vq_loss"].detach().cpu().item()),
                 "time": int(time.time()),
+                # Stamped on every row so a spliced curve is detectable, not just unlikely.
+                "run_id": run_id,
             }
             append_metrics(metrics_csv, row)
             with metrics_jsonl.open("a", encoding="utf-8") as f:
@@ -290,6 +373,7 @@ def train(args: argparse.Namespace) -> None:
                 usage = model.quantizer.codebook_usage(out["codes"].detach())
                 usage_row = {
                     "step": step,
+                    "run_id": run_id,
                     "loss": row["loss"],
                     "codebook_utilization_avg": usage["codebook_utilization_avg"],
                     "codebook_utilization_min": usage["codebook_utilization_min"],
@@ -339,12 +423,6 @@ def train(args: argparse.Namespace) -> None:
     write_wav(output_dir / "original.wav", sample.cpu(), kwargs["sample_rate"])
     write_wav(output_dir / "reconstructed.wav", recon.cpu(), kwargs["sample_rate"])
     train_eval = evaluate_dataset(model, dataset, device, output_dir, "train", args.export_examples)
-    val_dataset = AudioSegmentDataset(
-        paths=val_paths,
-        sample_rate=kwargs["sample_rate"],
-        channels=kwargs["channels"],
-        segment_samples=int(training.get("segment_samples", kwargs["sample_rate"])),
-    )
     val_eval = evaluate_dataset(model, val_dataset, device, output_dir, "val", args.export_examples)
     train_eval.update(model.compression_stats(sample.shape[-1]))
     val_eval.update(model.compression_stats(sample.shape[-1]))
@@ -352,6 +430,34 @@ def train(args: argparse.Namespace) -> None:
     val_eval.update(gpu_metrics(device))
     metrics.update(throughput)
     train_eval.update(throughput)
+
+    # Same held-out segments as the BEFORE probe, so the pair is comparable.
+    validation_after = evaluate_validation_probe(model, val_dataset, device, args.validation_probe)
+    validation_probe = {
+        "segments": validation_before.get("segments"),
+        "before": validation_before,
+        "after": validation_after,
+        "delta": {
+            key: validation_after[key] - validation_before[key]
+            for key in ("recon_loss", "waveform_l1", "mrstft", "spectral_convergence", "snr_db")
+            if key in validation_before and key in validation_after
+        },
+        "improved": bool(
+            validation_before
+            and validation_after
+            and validation_after["recon_loss"] < validation_before["recon_loss"]
+        ),
+    }
+    (output_dir / "validation_probe.json").write_text(
+        json.dumps(validation_probe, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    if validation_after:
+        print(
+            f"validation probe AFTER  ({int(validation_after['segments'])} held-out segments): "
+            f"recon_loss={validation_after['recon_loss']:.5f} "
+            f"l1={validation_after['waveform_l1']:.5f} mrstft={validation_after['mrstft']:.5f} "
+            f"| improved={validation_probe['improved']}"
+        )
 
     # Held-out listening examples come from the validation split only.
     character_examples = export_character_examples(model, val_dataset, device, output_dir)
@@ -361,6 +467,10 @@ def train(args: argparse.Namespace) -> None:
     print(f"exported {len(character_examples)} held-out character examples: {sorted(character_examples)}")
 
     metadata = {
+        "run_id": run_id,
+        "run_label": args.run_label,
+        "resumed_run_id": resumed_run_id,
+        "validation_probe": validation_probe,
         "config": args.config,
         "manifest": args.manifest,
         "train_manifest": args.train_manifest,
@@ -387,8 +497,14 @@ def train(args: argparse.Namespace) -> None:
         json.dumps(model.compression_stats(sample.shape[-1]), indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    save_checkpoint(output_dir / "checkpoint_last.pt", model, optimizer, step - 1, config, metrics)
-    save_checkpoint(output_dir / "checkpoint.pt", model, optimizer, step - 1, config, metrics)
+    save_checkpoint(
+        output_dir / "checkpoint_last.pt", model, optimizer, step - 1, config, metrics,
+        run_id=run_id, run_label=args.run_label,
+    )
+    save_checkpoint(
+        output_dir / "checkpoint.pt", model, optimizer, step - 1, config, metrics,
+        run_id=run_id, run_label=args.run_label,
+    )
     torch.save(optimizer.state_dict(), output_dir / "optimizer_state.pt")
     print(f"wrote {output_dir / 'reconstructed.wav'}")
 
@@ -403,6 +519,13 @@ def main() -> None:
     parser.add_argument("--val-manifest", default=None, help="M02 canonical validation manifest.")
     parser.add_argument("--audio-glob", default=None, help="Glob of WAV/FLAC files. Debug only; bypasses M02.")
     parser.add_argument("--rvq-log-every", type=int, default=10, help="Steps between RVQ health snapshots.")
+    parser.add_argument("--run-label", default="codec-run", help="Human-readable label recorded in the run id.")
+    parser.add_argument(
+        "--validation-probe",
+        type=int,
+        default=64,
+        help="Held-out segments evaluated before and after training for like-for-like evidence.",
+    )
     parser.add_argument("--output-dir", default="outputs/codec_m03_smoke")
     parser.add_argument("--resume", default=None)
     parser.add_argument("--steps", type=int, default=None)

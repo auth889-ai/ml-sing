@@ -28,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
 
+from songforge.training.run import curve_run_ids, read_run_manifest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 CUDA_TESTS = ("test_codec_cuda_smoke", "test_codec_cuda_amp_smoke")
@@ -118,14 +120,26 @@ def read_json(path: Path) -> dict[str, Any]:
         return json.load(handle)
 
 
-def read_curve(path: Path) -> list[dict[str, float]]:
+def read_curve(path: Path) -> list[dict[str, Any]]:
+    """Parse the training curve, keeping `run_id` so splicing stays detectable."""
     import csv
 
+    rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
-        return [
-            {key: float(value) for key, value in row.items() if key != "time"}
-            for row in csv.DictReader(handle)
-        ]
+        for raw in csv.DictReader(handle):
+            row: dict[str, Any] = {}
+            for key, value in raw.items():
+                if key == "time":
+                    continue
+                if key == "run_id":
+                    row["run_id"] = value
+                    continue
+                try:
+                    row[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
+            rows.append(row)
+    return rows
 
 
 def analyze_rvq_history(path: Path) -> dict[str, Any]:
@@ -150,6 +164,7 @@ def analyze_rvq_history(path: Path) -> dict[str, Any]:
 
     return {
         "available": True,
+        "rows": rows,
         "snapshots": len(rows),
         "first_step": int(rows[0]["step"]),
         "final_step": int(final["step"]),
@@ -188,6 +203,9 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
         "experiment_metadata.json",
         "rvq_history.jsonl",
         "listening_examples.json",
+        "run_manifest.json",
+        "validation_before.json",
+        "validation_probe.json",
     ]
     missing = [name for name in required if not (output_dir / name).exists()]
 
@@ -196,6 +214,7 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
     compression = read_json(output_dir / "compression_stats.json") if not missing else {}
     metadata = read_json(output_dir / "experiment_metadata.json") if not missing else {}
     examples = read_json(output_dir / "listening_examples.json") if not missing else {}
+    validation_probe = read_json(output_dir / "validation_probe.json") if not missing else {}
     curve = read_curve(output_dir / "training_curves.csv") if not missing else []
     rvq = analyze_rvq_history(output_dir / "rvq_history.jsonl")
 
@@ -243,6 +262,40 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
 
     used_m02_manifest = metadata.get("path_source", "").startswith("m02_manifest")
 
+    # Experiment isolation: the curve and the RVQ history must each come from a
+    # single run. A directory reused by two runs concatenates both, and the
+    # windowed verdict would then compare one run's start to another's end.
+    curve_steps = [row.get("step") for row in curve if row.get("step") is not None]
+    curve_ids = curve_run_ids(curve)
+    history_rows = rvq.get("rows", [])
+    history_ids = curve_run_ids(history_rows)
+    history_steps = [row.get("step") for row in history_rows]
+
+    isolation = {
+        "curve_rows": len(curve),
+        "curve_unique_steps": len(set(curve_steps)),
+        "curve_duplicate_steps": len(curve_steps) - len(set(curve_steps)),
+        "curve_run_ids": curve_ids,
+        "rvq_rows": len(history_rows),
+        "rvq_duplicate_steps": len(history_steps) - len(set(history_steps)),
+        "rvq_run_ids": history_ids,
+        "run_manifest": read_run_manifest(output_dir),
+    }
+    isolation["ok"] = bool(
+        len(curve_ids) <= 1
+        and len(history_ids) <= 1
+        and isolation["curve_duplicate_steps"] == 0
+        and isolation["rvq_duplicate_steps"] == 0
+    )
+    if not isolation["ok"]:
+        isolation["reason"] = (
+            "Artifacts contain rows from more than one run "
+            f"(curve run ids: {curve_ids or 'unstamped'}, "
+            f"duplicate curve steps: {isolation['curve_duplicate_steps']}, "
+            f"duplicate rvq steps: {isolation['rvq_duplicate_steps']}). "
+            "This directory was reused; rerun into a fresh --output-dir."
+        )
+
     return {
         "missing_artifacts": missing,
         "first_loss": first_loss,
@@ -264,7 +317,17 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
         "listening_examples": examples,
         "listening_example_count": len(examples),
         "used_m02_manifest": used_m02_manifest,
-        "acceptance_pass": bool(not missing and loss_decreased and not collapse and used_m02_manifest),
+        "isolation": isolation,
+        "validation_probe": validation_probe,
+        "validation_improved": bool(validation_probe.get("improved")),
+        "acceptance_pass": bool(
+            not missing
+            and loss_decreased
+            and not collapse
+            and used_m02_manifest
+            and isolation["ok"]
+            and bool(validation_probe.get("after"))
+        ),
     }
 
 
@@ -276,8 +339,21 @@ def collect_required_metrics(acceptance: dict[str, Any]) -> dict[str, Any]:
     rvq = acceptance.get("rvq_history", {})
     metadata = acceptance.get("metadata", {})
     throughput = metadata.get("throughput", {})
+    probe = acceptance.get("validation_probe", {}) or {}
+    before = probe.get("before", {}) or {}
+    after = probe.get("after", {}) or {}
 
     return {
+        "validation_probe_segments": probe.get("segments"),
+        "validation_recon_loss_before": before.get("recon_loss"),
+        "validation_recon_loss_after": after.get("recon_loss"),
+        "validation_l1_before": before.get("waveform_l1"),
+        "validation_l1_after": after.get("waveform_l1"),
+        "validation_mrstft_before": before.get("mrstft"),
+        "validation_mrstft_after": after.get("mrstft"),
+        "validation_snr_db_before": before.get("snr_db"),
+        "validation_snr_db_after": after.get("snr_db"),
+        "validation_improved": probe.get("improved"),
         "initial_train_loss": acceptance.get("first_loss"),
         "final_train_loss": acceptance.get("final_loss"),
         "loss_window_steps": acceptance.get("loss_window_steps"),
@@ -392,6 +468,14 @@ def write_experiment_log(path: Path, report: dict[str, Any]) -> None:
             f"| Initial MR-STFT (windowed mean) | `{fmt(metrics['initial_mrstft_windowed'])}` |",
             f"| Final MR-STFT (windowed mean) | `{fmt(metrics['final_mrstft_windowed'])}` |",
             f"| Loss decreased (windowed) | `{acceptance['loss_decreased']}` |",
+            f"| Validation probe segments (held-out) | `{fmt(metrics['validation_probe_segments'])}` |",
+            f"| Validation recon loss BEFORE | `{fmt(metrics['validation_recon_loss_before'])}` |",
+            f"| Validation recon loss AFTER | `{fmt(metrics['validation_recon_loss_after'])}` |",
+            f"| Validation L1 BEFORE | `{fmt(metrics['validation_l1_before'])}` |",
+            f"| Validation L1 AFTER | `{fmt(metrics['validation_l1_after'])}` |",
+            f"| Validation MR-STFT BEFORE | `{fmt(metrics['validation_mrstft_before'])}` |",
+            f"| Validation MR-STFT AFTER | `{fmt(metrics['validation_mrstft_after'])}` |",
+            f"| Validation improved from init | `{metrics['validation_improved']}` |",
             f"| Train waveform L1 | `{fmt(metrics['train_waveform_l1'])}` |",
             f"| Train MR-STFT | `{fmt(metrics['train_mrstft'])}` |",
             f"| Validation waveform L1 | `{fmt(metrics['validation_waveform_l1'])}` |",
@@ -418,6 +502,17 @@ def write_experiment_log(path: Path, report: dict[str, Any]) -> None:
             f"| Training throughput audio-s/s | `{fmt(metrics['train_audio_seconds_per_second'])}` |",
             f"| Encode+decode seconds | `{fmt(metrics['encode_decode_seconds'])}` |",
             f"| Encode+decode real-time factor | `{fmt(metrics['encode_decode_real_time_factor'])}` |",
+            "",
+            "### Experiment Isolation",
+            "",
+            f"- Run id: `{(acceptance.get('isolation', {}).get('run_manifest') or {}).get('run_id')}`",
+            (
+                f"- Curve rows: `{acceptance.get('isolation', {}).get('curve_rows')}` "
+                f"across `{len(acceptance.get('isolation', {}).get('curve_run_ids', []))}` run id(s)"
+            ),
+            f"- Duplicate curve steps: `{acceptance.get('isolation', {}).get('curve_duplicate_steps')}`",
+            f"- Duplicate RVQ steps: `{acceptance.get('isolation', {}).get('rvq_duplicate_steps')}`",
+            f"- Single-run artifacts: `{acceptance.get('isolation', {}).get('ok')}`",
             "",
             "### RVQ Behavior Throughout Training",
             "",
@@ -561,6 +656,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume-extra-steps", type=int, default=25, help="Extra steps for the resume check.")
     parser.add_argument("--val-fraction", type=float, default=0.25, help="Only used without --val-manifest.")
     parser.add_argument("--rvq-log-every", type=int, default=25)
+    parser.add_argument(
+        "--validation-probe",
+        type=int,
+        default=64,
+        help="Held-out segments evaluated before and after training.",
+    )
     parser.add_argument("--export-examples", type=int, default=5)
     parser.add_argument("--allow-cpu", action="store_true", help="Debug only; M03 acceptance requires CUDA.")
     parser.add_argument("--log-path", default="docs/EXPERIMENT_LOG.md")
@@ -599,6 +700,8 @@ def main() -> None:
         "--device", device,
         "--val-fraction", str(args.val_fraction),
         "--rvq-log-every", str(args.rvq_log_every),
+        "--run-label", args.run_label,
+        "--validation-probe", str(args.validation_probe),
     ]
 
     train_command = [
@@ -669,6 +772,10 @@ def main() -> None:
             "rvq_temporary_collapse": acceptance["rvq_history"].get("temporary_collapse"),
             "rvq_recovered": acceptance["rvq_history"].get("recovered"),
             "used_m02_manifest": acceptance["used_m02_manifest"],
+            "isolation_ok": acceptance["isolation"]["ok"],
+            "curve_rows": acceptance["isolation"]["curve_rows"],
+            "curve_run_ids": acceptance["isolation"]["curve_run_ids"],
+            "validation_improved": acceptance["validation_improved"],
             "listening_examples": acceptance["listening_example_count"],
             "resume_returncode": resume_result["returncode"],
             "acceptance_pass": acceptance["acceptance_pass"],
