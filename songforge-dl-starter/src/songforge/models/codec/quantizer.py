@@ -168,6 +168,21 @@ class ResidualVectorQuantizer(nn.Module):
             entropies.append(float(entropy.item()))
             dead_counts.append(float((hist == 0).sum().item()))
             utilizations.append(unique / float(self.codebook_size))
+        # Per-codebook detail as well as aggregates: an RVQ can look healthy on
+        # average while its deepest quantizer is dead, and acceptance needs to
+        # see that. Aggregate key names are unchanged.
+        per_codebook = [
+            {
+                "index": index,
+                "unique": unique_counts[index],
+                "utilization": utilizations[index],
+                "dead_codes": dead_counts[index],
+                "entropy": entropies[index],
+                "perplexity": perplexities[index],
+                "collapsed": bool(utilizations[index] < 0.05 or perplexities[index] < 2.0),
+            }
+            for index in range(len(unique_counts))
+        ]
         return {
             "codebook_unique_avg": sum(unique_counts) / max(len(unique_counts), 1),
             "codebook_perplexity_avg": sum(perplexities) / max(len(perplexities), 1),
@@ -176,5 +191,11 @@ class ResidualVectorQuantizer(nn.Module):
             "codebook_utilization_avg": sum(utilizations) / max(len(utilizations), 1),
             "codebook_unique_min": min(unique_counts) if unique_counts else 0.0,
             "codebook_perplexity_min": min(perplexities) if perplexities else 0.0,
+            "codebook_utilization_min": min(utilizations) if utilizations else 0.0,
+            "codebook_entropy_min": min(entropies) if entropies else 0.0,
+            "codebook_dead_codes_max": max(dead_counts) if dead_counts else 0.0,
+            "codebook_count": float(len(unique_counts)),
+            "codebook_size": float(self.codebook_size),
+            "per_codebook": per_codebook,
             "rvq_collapse_suspected": float(any(u < 0.05 or p < 2.0 for u, p in zip(utilizations, perplexities))),
         }

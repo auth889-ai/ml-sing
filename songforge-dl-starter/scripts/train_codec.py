@@ -15,7 +15,12 @@ import yaml
 from torch.utils.data import DataLoader
 
 from songforge.data.audio import AudioSegmentDataset, read_audio_paths, write_wav
-from songforge.evaluation.audio import codec_timing_metrics, reconstruction_metrics
+from songforge.evaluation.audio import (
+    audio_character_features,
+    codec_timing_metrics,
+    reconstruction_metrics,
+    select_character_examples,
+)
 from songforge.losses.audio import codec_reconstruction_loss
 from songforge.models.codec import NeuralCodec
 from songforge.training.checkpoint import load_checkpoint, save_checkpoint
@@ -57,6 +62,72 @@ def split_paths(paths: list[Path], val_fraction: float) -> tuple[list[Path], lis
     val_count = max(1, round(len(paths) * val_fraction))
     val_count = min(val_count, len(paths) - 1)
     return paths[:-val_count], paths[-val_count:]
+
+
+def resolve_paths(args: argparse.Namespace) -> tuple[list[Path], list[Path], str]:
+    """Prefer the M02 canonical manifests; fall back to ad-hoc globbing for debugging.
+
+    The M02 split is song-disjoint, so using it here is what makes validation
+    genuinely held out. Splitting a glob by file order does not guarantee that.
+    """
+    if args.train_manifest:
+        train_paths = read_audio_paths(manifest=args.train_manifest)
+        if args.val_manifest:
+            val_paths = read_audio_paths(manifest=args.val_manifest)
+        else:
+            train_paths, val_paths = split_paths(train_paths, float(args.val_fraction))
+            return train_paths, val_paths, "m02_manifest_train_only"
+        return train_paths, val_paths, "m02_manifest"
+
+    paths = read_audio_paths(args.manifest, args.audio_glob)
+    train_paths, val_paths = split_paths(paths, float(args.val_fraction))
+    return train_paths, val_paths, "manifest" if args.manifest else "audio_glob"
+
+
+@torch.no_grad()
+def export_character_examples(
+    model: NeuralCodec,
+    dataset: AudioSegmentDataset,
+    device: torch.device,
+    output_dir: Path,
+    max_candidates: int = 64,
+) -> dict[str, Any]:
+    """Export one held-out original/reconstructed pair per spectral character.
+
+    Gives the listening test percussion-heavy, harmonic, bass-heavy and mixed
+    material instead of whichever segments happened to sort first.
+    """
+    if len(dataset) == 0:
+        return {}
+    model.eval()
+    candidates = []
+    for index in range(min(len(dataset), max_candidates)):
+        audio = dataset[index]
+        candidates.append(
+            {"index": index, "features": audio_character_features(audio, model.sample_rate)}
+        )
+
+    chosen = select_character_examples(candidates)
+    example_dir = output_dir / "examples"
+    exported: dict[str, Any] = {}
+
+    for character, entry in chosen.items():
+        audio = dataset[entry["index"]].unsqueeze(0).to(device)
+        out = model(audio)
+        recon = out["reconstruction"]
+        original_path = example_dir / f"character_{character}_original.wav"
+        reconstructed_path = example_dir / f"character_{character}_reconstructed.wav"
+        write_wav(original_path, audio.cpu(), model.sample_rate)
+        write_wav(reconstructed_path, recon.cpu(), model.sample_rate)
+        exported[character] = {
+            "segment_index": entry["index"],
+            "source_path": str(dataset.paths[entry["index"]]),
+            "original": str(original_path),
+            "reconstructed": str(reconstructed_path),
+            "features": entry["features"],
+            "metrics": reconstruction_metrics(recon, audio),
+        }
+    return exported
 
 
 @torch.no_grad()
@@ -146,8 +217,8 @@ def train(args: argparse.Namespace) -> None:
         checkpoint = load_checkpoint(args.resume, model, optimizer, map_location=device)
         start_step = int(checkpoint.get("step", 0)) + 1
 
-    paths = read_audio_paths(args.manifest, args.audio_glob)
-    train_paths, val_paths = split_paths(paths, float(args.val_fraction))
+    train_paths, val_paths, path_source = resolve_paths(args)
+    print(f"data source: {path_source} ({len(train_paths)} train / {len(val_paths)} val files)")
     (output_dir / "train_files.txt").write_text("\n".join(str(path) for path in train_paths) + "\n", encoding="utf-8")
     (output_dir / "val_files.txt").write_text("\n".join(str(path) for path in val_paths) + "\n", encoding="utf-8")
     dataset = AudioSegmentDataset(
@@ -164,13 +235,21 @@ def train(args: argparse.Namespace) -> None:
     metrics_csv = output_dir / "training_curves.csv"
     metrics_jsonl = output_dir / "metrics.jsonl"
 
+    rvq_history_path = output_dir / "rvq_history.jsonl"
+    rvq_log_every = max(int(args.rvq_log_every), 1)
+
     first_batch = None
     step = start_step
+    train_start = time.perf_counter()
+    samples_seen = 0
+    audio_seconds_seen = 0.0
     while step < steps:
         for batch in loader:
             if step >= steps:
                 break
             batch = batch.to(device)
+            samples_seen += batch.size(0)
+            audio_seconds_seen += batch.size(0) * batch.size(-1) / float(kwargs["sample_rate"])
             if first_batch is None:
                 first_batch = batch[:1].detach().cpu()
             optimizer.zero_grad(set_to_none=True)
@@ -203,8 +282,47 @@ def train(args: argparse.Namespace) -> None:
             append_metrics(metrics_csv, row)
             with metrics_jsonl.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(row) + "\n")
-            print(f"step={step} loss={row['loss']:.5f} l1={row['waveform_l1']:.5f} mrstft={row['mrstft']:.5f}")
+
+            # Track RVQ health throughout training, not only at the end: the
+            # codebook typically collapses early and recovers, and acceptance
+            # has to be able to see that happen rather than infer it.
+            if step % rvq_log_every == 0 or step == steps - 1:
+                usage = model.quantizer.codebook_usage(out["codes"].detach())
+                usage_row = {
+                    "step": step,
+                    "loss": row["loss"],
+                    "codebook_utilization_avg": usage["codebook_utilization_avg"],
+                    "codebook_utilization_min": usage["codebook_utilization_min"],
+                    "codebook_perplexity_avg": usage["codebook_perplexity_avg"],
+                    "codebook_perplexity_min": usage["codebook_perplexity_min"],
+                    "codebook_entropy_avg": usage["codebook_entropy_avg"],
+                    "codebook_dead_codes_avg": usage["codebook_dead_codes_avg"],
+                    "codebook_unique_avg": usage["codebook_unique_avg"],
+                    "rvq_collapse_suspected": usage["rvq_collapse_suspected"],
+                    "per_codebook": usage["per_codebook"],
+                }
+                with rvq_history_path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(usage_row) + "\n")
+                print(
+                    f"step={step} loss={row['loss']:.5f} l1={row['waveform_l1']:.5f} "
+                    f"mrstft={row['mrstft']:.5f} util={usage['codebook_utilization_avg']:.3f} "
+                    f"ppl={usage['codebook_perplexity_avg']:.2f} "
+                    f"collapse={int(usage['rvq_collapse_suspected'])}"
+                )
+            else:
+                print(f"step={step} loss={row['loss']:.5f} l1={row['waveform_l1']:.5f} mrstft={row['mrstft']:.5f}")
             step += 1
+
+    train_seconds = time.perf_counter() - train_start
+    steps_run = max(step - start_step, 1)
+    throughput = {
+        "train_wall_seconds": float(train_seconds),
+        "steps_run": int(steps_run),
+        "steps_per_second": float(steps_run / max(train_seconds, 1e-8)),
+        "segments_per_second": float(samples_seen / max(train_seconds, 1e-8)),
+        "audio_seconds_per_second": float(audio_seconds_seen / max(train_seconds, 1e-8)),
+        "audio_seconds_processed": float(audio_seconds_seen),
+    }
 
     sample = first_batch if first_batch is not None else dataset[0].unsqueeze(0)
     model.eval()
@@ -232,16 +350,29 @@ def train(args: argparse.Namespace) -> None:
     val_eval.update(model.compression_stats(sample.shape[-1]))
     train_eval.update(gpu_metrics(device))
     val_eval.update(gpu_metrics(device))
+    metrics.update(throughput)
+    train_eval.update(throughput)
+
+    # Held-out listening examples come from the validation split only.
+    character_examples = export_character_examples(model, val_dataset, device, output_dir)
+    (output_dir / "listening_examples.json").write_text(
+        json.dumps(character_examples, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    print(f"exported {len(character_examples)} held-out character examples: {sorted(character_examples)}")
 
     metadata = {
         "config": args.config,
         "manifest": args.manifest,
+        "train_manifest": args.train_manifest,
+        "val_manifest": args.val_manifest,
+        "path_source": path_source,
         "audio_glob": args.audio_glob,
         "output_dir": str(output_dir),
         "steps_completed": step,
         "resumed_from": args.resume,
         "amp": amp,
         "device": str(device),
+        "throughput": throughput,
         "train_file_count": len(train_paths),
         "val_file_count": len(val_paths),
         "train_files": [str(path) for path in train_paths],
@@ -266,7 +397,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train the M03 SongForge neural codec on local/Colab audio.")
     parser.add_argument("--config", default="configs/codec/codec_m03_tiny.yaml")
     parser.add_argument("--manifest", default=None, help="JSONL manifest with path fields.")
-    parser.add_argument("--audio-glob", default=None, help="Glob of WAV/FLAC files. Quote this argument in shells.")
+    parser.add_argument(
+        "--train-manifest", default=None, help="M02 canonical train manifest (preferred over --audio-glob)."
+    )
+    parser.add_argument("--val-manifest", default=None, help="M02 canonical validation manifest.")
+    parser.add_argument("--audio-glob", default=None, help="Glob of WAV/FLAC files. Debug only; bypasses M02.")
+    parser.add_argument("--rvq-log-every", type=int, default=10, help="Steps between RVQ health snapshots.")
     parser.add_argument("--output-dir", default="outputs/codec_m03_smoke")
     parser.add_argument("--resume", default=None)
     parser.add_argument("--steps", type=int, default=None)

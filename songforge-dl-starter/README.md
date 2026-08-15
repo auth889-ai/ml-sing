@@ -38,12 +38,12 @@ python scripts/smoke_train_planner.py
 | --- | --- |
 | M00 repository health | PASS |
 | M01 dataset registry + licensing | PASS |
-| M02 audio preprocessing | implemented, acceptance runs on Colab |
-| M03 neural codec | prototype exists, kept as an **experimental spike**, not accepted |
+| M02 audio preprocessing | PASS (real BabySlakh, Colab) |
+| M03 neural codec | acceptance runner ready; runs on Colab CUDA from the M02 manifest |
 | M04+ | not started |
 
-M03 was built before M02. The code is preserved and still runs, but it is not an accepted
-milestone; official M03 acceptance follows M02 sign-off. See `AGENTS.md` for the gates.
+M03 trains from the M02 canonical manifest and never from a raw glob. See `AGENTS.md` for the
+gates and `docs/COLAB_REMOTE_TRAINING.md` for the acceptance command.
 
 ## Preprocess a dataset (M02)
 
