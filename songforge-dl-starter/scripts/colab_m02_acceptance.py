@@ -1,4 +1,4 @@
-"""M02 acceptance runner for Google Colab.
+"""M02 — Audio Preprocessing & Dataset Pipeline: Colab acceptance runner.
 
 Drives the full gate end to end:
 
@@ -51,6 +51,7 @@ from songforge.data.splits import (
     assign_splits,
     split_report,
 )
+from songforge.milestones import milestone
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -118,11 +119,11 @@ def write_experiment_log(path: Path, report: dict[str, Any]) -> None:
     splits = report["splits"]["splits"]
 
     lines = [
-        "# Experiment Log - M02",
+        f"# Experiment Log — {milestone('M02')}",
         "",
-        "## M02 Audio Preprocessing Acceptance",
+        f"## {milestone('M02')}: Acceptance",
         "",
-        f"Status: **M02 {status}**" + ("  (synthetic rehearsal, not a real pass)" if report["synthetic"] else ""),
+        f"Status: **{milestone('M02')} = {status}**" + ("  (synthetic rehearsal, not a real pass)" if report["synthetic"] else ""),
         "",
         "### Environment",
         "",
@@ -354,8 +355,8 @@ def main() -> None:
         print("\nSynthetic rehearsal complete. Rerun with --audio-dir on real approved audio for M02 PASS.")
         return
     if not acceptance_pass:
-        raise SystemExit("M02 acceptance FAIL. Inspect m02_acceptance_report.json.")
-    print("\nM02 acceptance PASS")
+        raise SystemExit(f"{milestone('M02')} = FAIL. Inspect m02_acceptance_report.json.")
+    print(f"\n{milestone('M02')} = PASS")
 
 
 if __name__ == "__main__":

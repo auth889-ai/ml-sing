@@ -36,14 +36,31 @@ python scripts/smoke_train_planner.py
 
 | Milestone | Status |
 | --- | --- |
-| M00 repository health | PASS |
-| M01 dataset registry + licensing | PASS |
-| M02 audio preprocessing | PASS (real BabySlakh, Colab) |
-| M03 neural codec | acceptance runner ready; runs on Colab CUDA from the M02 manifest |
-| M04+ | not started |
+| M00 — Repository & Project Bootstrap | PASS |
+| M01 — Dataset Registry, Licensing & Provenance | PASS |
+| M02 — Audio Preprocessing & Dataset Pipeline | PASS (real BabySlakh, Colab) |
+| M03 — Neural Audio Codec & Discrete Audio Representation | acceptance in progress on Colab |
+| M04 — High-Quality Codec Optimization & Latent-Rate Selection | not started |
+| M05 — Musical Representation & Tokenization | not started |
+| M06 — Song Planning & Semantic Music Generation | not started |
+| M07 — Lyrics, Phoneme & Vocal Alignment Pipeline | not started |
+| M08 — Singing Voice Generation Model | not started |
+| M09 — High-Quality Audio Decoder / Vocoder | not started |
+| M10 — Instrumental & Full-Band Music Generation | not started |
+| M11 — Full Song Generation Integration | not started |
+| M12 — Objective & Human Evaluation | not started |
+| M13 — Long-Form Song Generation | not started |
+| M14 — Genre, Style & Instrument Conditioning Expansion | not started |
+| M15 — Preference & Quality Optimization | not started |
+| M16 — Song Generation Inference UI / Product | not started |
 
-M03 trains from the M02 canonical manifest and never from a raw glob. See `AGENTS.md` for the
-gates and `docs/COLAB_REMOTE_TRAINING.md` for the acceptance command.
+Milestones are always written as number + full descriptive title; never a bare `M03`.
+The canonical list lives in `src/songforge/milestones.py` and every generated report
+resolves names through it.
+
+M03 — Neural Audio Codec & Discrete Audio Representation trains from the M02 canonical
+manifest and never from a raw glob. See `AGENTS.md` for the gates and
+`docs/COLAB_REMOTE_TRAINING.md` for the acceptance command.
 
 ## Preprocess a dataset (M02)
 

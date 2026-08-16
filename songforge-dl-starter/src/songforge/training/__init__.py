@@ -1,4 +1,9 @@
-from .checkpoint import load_checkpoint, save_checkpoint
+from .checkpoint import (
+    capture_rng_state,
+    load_checkpoint,
+    restore_rng_state,
+    save_checkpoint,
+)
 from .run import (
     RUN_ARTIFACTS,
     RUN_MANIFEST_NAME,
@@ -10,7 +15,10 @@ from .run import (
     curve_run_ids,
     existing_run_artifacts,
     new_run_id,
+    probe_fingerprint,
     read_run_manifest,
+    truncate_csv_from_step,
+    truncate_jsonl_from_step,
     write_run_manifest,
 )
 from .seed import seed_everything
@@ -22,13 +30,18 @@ __all__ = [
     "assert_fresh_run_dir",
     "assert_resume_compatible",
     "assert_single_run",
+    "capture_rng_state",
     "config_fingerprint",
     "curve_run_ids",
     "existing_run_artifacts",
     "load_checkpoint",
     "new_run_id",
+    "probe_fingerprint",
     "read_run_manifest",
+    "restore_rng_state",
     "save_checkpoint",
     "seed_everything",
+    "truncate_csv_from_step",
+    "truncate_jsonl_from_step",
     "write_run_manifest",
 ]

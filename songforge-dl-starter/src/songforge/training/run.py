@@ -122,6 +122,85 @@ def assert_resume_compatible(checkpoint: dict[str, Any], config: dict[str, Any] 
     return str(checkpoint.get("run_id") or "")
 
 
+def probe_fingerprint(sample_ids: list[str]) -> str:
+    """Hash of the held-out probe membership.
+
+    Recorded before and after training so the two measurements can be proven to
+    cover the same segments rather than merely the same count.
+    """
+    payload = "\x1f".join(str(sample_id) for sample_id in sample_ids)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _superseded_path(path: Path) -> Path:
+    return path.with_name(path.name + ".superseded")
+
+
+def truncate_csv_from_step(path: str | Path, start_step: int) -> int:
+    """Drop curve rows at or after `start_step`, keeping them as evidence.
+
+    A checkpoint saved at step N while training continued to N+k leaves replayed
+    rows behind on resume. Without this the curve would contain some steps twice
+    and the isolation gate would (correctly) reject the run. Removed rows are
+    appended to a `.superseded` sibling rather than deleted.
+    """
+    import csv
+
+    path = Path(path)
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = reader.fieldnames or []
+        rows = list(reader)
+    keep, drop = [], []
+    for row in rows:
+        try:
+            step = int(float(row.get("step", "nan")))
+        except (TypeError, ValueError):
+            keep.append(row)
+            continue
+        (drop if step >= start_step else keep).append(row)
+    if not drop:
+        return 0
+
+    superseded = _superseded_path(path)
+    exists = superseded.exists()
+    with superseded.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        if not exists:
+            writer.writeheader()
+        writer.writerows(drop)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(keep)
+    return len(drop)
+
+
+def truncate_jsonl_from_step(path: str | Path, start_step: int) -> int:
+    """Same as `truncate_csv_from_step` for JSONL histories."""
+    path = Path(path)
+    if not path.exists():
+        return 0
+    lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    keep, drop = [], []
+    for line in lines:
+        try:
+            step = int(json.loads(line).get("step", -1))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            keep.append(line)
+            continue
+        (drop if step >= start_step else keep).append(line)
+    if not drop:
+        return 0
+
+    with _superseded_path(path).open("a", encoding="utf-8") as handle:
+        handle.write("\n".join(drop) + "\n")
+    path.write_text(("\n".join(keep) + "\n") if keep else "", encoding="utf-8")
+    return len(drop)
+
+
 def curve_run_ids(rows: list[dict[str, Any]]) -> list[str]:
     """Distinct run ids present in a curve or history, in first-seen order."""
     seen: list[str] = []

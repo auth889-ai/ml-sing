@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 import time
@@ -28,6 +29,9 @@ from songforge.training.run import (
     assert_fresh_run_dir,
     assert_resume_compatible,
     new_run_id,
+    probe_fingerprint,
+    truncate_csv_from_step,
+    truncate_jsonl_from_step,
     write_run_manifest,
 )
 from songforge.training.seed import seed_everything
@@ -90,34 +94,51 @@ def resolve_paths(args: argparse.Namespace) -> tuple[list[Path], list[Path], str
     return train_paths, val_paths, "manifest" if args.manifest else "audio_glob"
 
 
+def select_probe_indices(dataset: AudioSegmentDataset, max_items: int) -> list[int]:
+    """Deterministic held-out probe membership.
+
+    Chosen by hashing each segment's own path, so the selection depends only on
+    the dataset contents - not on ordering, machine, or how many Colab sessions
+    the run took. The same segments are therefore measured before and after
+    training, and after a disconnect/resume.
+    """
+    scored = sorted(
+        range(len(dataset)),
+        key=lambda index: hashlib.sha256(str(dataset.paths[index]).encode("utf-8")).hexdigest(),
+    )
+    return sorted(scored[: min(max_items, len(dataset))])
+
+
 @torch.no_grad()
 def evaluate_validation_probe(
     model: NeuralCodec,
     dataset: AudioSegmentDataset,
     device: torch.device,
-    max_items: int = 64,
-) -> dict[str, float]:
-    """Reconstruction quality on a fixed prefix of the held-out validation set.
+    indices: list[int],
+) -> dict[str, Any]:
+    """Reconstruction quality on exactly `indices` of the held-out validation set.
 
     Called once before the first optimizer step and once after training, on the
-    same segments, so the before/after pair is a like-for-like measurement of
-    what training actually bought. `recon_loss` is waveform L1 + MR-STFT, the
+    same segment ids, so the before/after pair is a like-for-like measurement of
+    what training bought. `recon_loss` is waveform L1 + MR-STFT, the
     reconstruction part of the training objective (no VQ term).
     """
-    if len(dataset) == 0:
+    if not indices:
         return {}
     was_training = model.training
     model.eval()
     rows = []
-    for index in range(min(len(dataset), max_items)):
+    for index in indices:
         audio = dataset[index].unsqueeze(0).to(device)
         rows.append(reconstruction_metrics(model(audio)["reconstruction"], audio))
     if was_training:
         model.train()
 
-    metrics = {key: sum(row[key] for row in rows) / len(rows) for key in rows[0]}
+    metrics: dict[str, Any] = {key: sum(row[key] for row in rows) / len(rows) for key in rows[0]}
     metrics["recon_loss"] = metrics["waveform_l1"] + metrics["mrstft"]
     metrics["segments"] = float(len(rows))
+    metrics["sample_ids"] = [Path(dataset.paths[index]).stem for index in indices]
+    metrics["probe_fingerprint"] = probe_fingerprint(metrics["sample_ids"])
     return metrics
 
 
@@ -175,13 +196,19 @@ def evaluate_dataset(
     output_dir: Path,
     prefix: str,
     max_examples: int,
+    max_segments: int = 0,
 ) -> dict[str, float]:
     model.eval()
     rows: list[dict[str, float]] = []
     all_codes = []
     first_audio = None
     first_recon = None
-    for idx in range(len(dataset)):
+    # Bounded, deterministic sample. Evaluating every segment meant thousands of
+    # Drive-resident reads per run, which is what exhausted the Colab runtime
+    # before any final evidence was persisted. The bound is recorded in the
+    # metrics so the sample size is never mistaken for the full split.
+    indices = select_probe_indices(dataset, max_segments) if max_segments else list(range(len(dataset)))
+    for idx in indices:
         audio = dataset[idx].unsqueeze(0).to(device)
         out = model(audio)
         recon = out["reconstruction"]
@@ -204,6 +231,8 @@ def evaluate_dataset(
         mean_metrics.update(model.quantizer.codebook_usage(torch.cat(all_codes, dim=0)))
     if first_audio is not None and first_recon is not None:
         mean_metrics.update(codec_timing_metrics(model, first_audio.to(device)))
+    mean_metrics["evaluated_segments"] = float(len(rows))
+    mean_metrics["available_segments"] = float(len(dataset))
     return mean_metrics
 
 
@@ -256,15 +285,30 @@ def train(args: argparse.Namespace) -> None:
         betas=tuple(training.get("betas", [0.9, 0.95])),
         weight_decay=float(training.get("weight_decay", 0.0)),
     )
+    scaler = torch.amp.GradScaler("cuda", enabled=amp)
+
     start_step = 0
     run_id = new_run_id(args.run_label)
     resumed_run_id = None
+    rng_restored = False
+    superseded_rows = 0
     if args.resume:
-        checkpoint = load_checkpoint(args.resume, model, optimizer, map_location=device)
+        checkpoint = load_checkpoint(args.resume, model, optimizer, map_location=device, scaler=scaler)
         resumed_run_id = assert_resume_compatible(checkpoint, config)
         if resumed_run_id:
             run_id = resumed_run_id
+        rng_restored = bool(checkpoint.get("rng_restored"))
         start_step = int(checkpoint.get("step", 0)) + 1
+        # A checkpoint saved at step N while training ran on to N+k leaves replayed
+        # rows behind. Retire them (kept as .superseded evidence) so steps appear
+        # exactly once across however many Colab sessions this run spans.
+        superseded_rows = truncate_csv_from_step(output_dir / "training_curves.csv", start_step)
+        superseded_rows += truncate_jsonl_from_step(output_dir / "rvq_history.jsonl", start_step)
+        superseded_rows += truncate_jsonl_from_step(output_dir / "metrics.jsonl", start_step)
+        print(
+            f"resuming run {run_id} at step {start_step} "
+            f"(rng_restored={rng_restored}, superseded rows retired={superseded_rows})"
+        )
 
     write_run_manifest(
         output_dir,
@@ -295,21 +339,26 @@ def train(args: argparse.Namespace) -> None:
         channels=kwargs["channels"],
         segment_samples=int(training.get("segment_samples", kwargs["sample_rate"])),
     )
-    # Measure held-out quality before a single optimizer step, on the same
-    # segments that will be re-measured after training.
-    validation_before = evaluate_validation_probe(model, val_dataset, device, args.validation_probe)
-    if validation_before:
-        print(
-            f"validation probe BEFORE ({int(validation_before['segments'])} held-out segments): "
-            f"recon_loss={validation_before['recon_loss']:.5f} "
-            f"l1={validation_before['waveform_l1']:.5f} mrstft={validation_before['mrstft']:.5f}"
-        )
-    (output_dir / "validation_before.json").write_text(
-        json.dumps(validation_before, indent=2, sort_keys=True), encoding="utf-8"
-    )
+    # Deterministic held-out probe membership, identical before and after training
+    # and across a disconnect/resume.
+    probe_indices = select_probe_indices(val_dataset, args.validation_probe)
+    probe_path = output_dir / "validation_before.json"
+    if args.resume and probe_path.exists():
+        # Keep the original BEFORE measurement; it belongs to step 0 of this run.
+        validation_before = json.loads(probe_path.read_text(encoding="utf-8"))
+        print(f"reusing BEFORE probe from this run (fingerprint {validation_before.get('probe_fingerprint')})")
+    else:
+        validation_before = evaluate_validation_probe(model, val_dataset, device, probe_indices)
+        probe_path.write_text(json.dumps(validation_before, indent=2, sort_keys=True), encoding="utf-8")
+        if validation_before:
+            print(
+                f"validation probe BEFORE ({int(validation_before['segments'])} held-out segments, "
+                f"fingerprint {validation_before['probe_fingerprint']}): "
+                f"recon_loss={validation_before['recon_loss']:.5f} "
+                f"l1={validation_before['waveform_l1']:.5f} mrstft={validation_before['mrstft']:.5f}"
+            )
 
     loader = DataLoader(dataset, batch_size=int(training.get("batch_size", 2)), shuffle=True, drop_last=False)
-    scaler = torch.amp.GradScaler("cuda", enabled=amp)
     steps = int(args.steps or training.get("steps", 20))
     grad_clip = float(training.get("grad_clip", 1.0))
     fft_sizes = tuple(training.get("fft_sizes", [256, 512, 1024]))
@@ -318,6 +367,7 @@ def train(args: argparse.Namespace) -> None:
 
     rvq_history_path = output_dir / "rvq_history.jsonl"
     rvq_log_every = max(int(args.rvq_log_every), 1)
+    checkpoint_every = max(int(args.checkpoint_every), 0)
 
     first_batch = None
     step = start_step
@@ -395,6 +445,17 @@ def train(args: argparse.Namespace) -> None:
                 )
             else:
                 print(f"step={step} loss={row['loss']:.5f} l1={row['waveform_l1']:.5f} mrstft={row['mrstft']:.5f}")
+
+            # Periodic atomic checkpoint. Written via a temp file + os.replace, so
+            # a runtime that dies mid-write leaves the previous one intact. This is
+            # what makes the run survive a Colab disconnect as ONE experiment.
+            if checkpoint_every and (step + 1) % checkpoint_every == 0:
+                save_checkpoint(
+                    output_dir / "checkpoint_latest.pt", model, optimizer, step, config,
+                    {"loss": row["loss"]}, run_id=run_id, run_label=args.run_label,
+                    scaler=scaler, extra={"periodic": True},
+                )
+                print(f"  checkpoint_latest.pt written at step {step}", flush=True)
             step += 1
 
     train_seconds = time.perf_counter() - train_start
@@ -422,8 +483,12 @@ def train(args: argparse.Namespace) -> None:
 
     write_wav(output_dir / "original.wav", sample.cpu(), kwargs["sample_rate"])
     write_wav(output_dir / "reconstructed.wav", recon.cpu(), kwargs["sample_rate"])
-    train_eval = evaluate_dataset(model, dataset, device, output_dir, "train", args.export_examples)
-    val_eval = evaluate_dataset(model, val_dataset, device, output_dir, "val", args.export_examples)
+    train_eval = evaluate_dataset(
+        model, dataset, device, output_dir, "train", args.export_examples, args.eval_max_segments
+    )
+    val_eval = evaluate_dataset(
+        model, val_dataset, device, output_dir, "val", args.export_examples, args.eval_max_segments
+    )
     train_eval.update(model.compression_stats(sample.shape[-1]))
     val_eval.update(model.compression_stats(sample.shape[-1]))
     train_eval.update(gpu_metrics(device))
@@ -431,10 +496,17 @@ def train(args: argparse.Namespace) -> None:
     metrics.update(throughput)
     train_eval.update(throughput)
 
-    # Same held-out segments as the BEFORE probe, so the pair is comparable.
-    validation_after = evaluate_validation_probe(model, val_dataset, device, args.validation_probe)
+    # Same held-out segment ids as the BEFORE probe, so the pair is comparable.
+    validation_after = evaluate_validation_probe(model, val_dataset, device, probe_indices)
+    same_probe = bool(
+        validation_before.get("probe_fingerprint")
+        and validation_before.get("probe_fingerprint") == validation_after.get("probe_fingerprint")
+    )
     validation_probe = {
         "segments": validation_before.get("segments"),
+        "probe_fingerprint": validation_before.get("probe_fingerprint"),
+        "same_probe_before_and_after": same_probe,
+        "sample_ids": validation_before.get("sample_ids", []),
         "before": validation_before,
         "after": validation_after,
         "delta": {
@@ -499,11 +571,11 @@ def train(args: argparse.Namespace) -> None:
     )
     save_checkpoint(
         output_dir / "checkpoint_last.pt", model, optimizer, step - 1, config, metrics,
-        run_id=run_id, run_label=args.run_label,
+        run_id=run_id, run_label=args.run_label, scaler=scaler,
     )
     save_checkpoint(
         output_dir / "checkpoint.pt", model, optimizer, step - 1, config, metrics,
-        run_id=run_id, run_label=args.run_label,
+        run_id=run_id, run_label=args.run_label, scaler=scaler,
     )
     torch.save(optimizer.state_dict(), output_dir / "optimizer_state.pt")
     print(f"wrote {output_dir / 'reconstructed.wav'}")
@@ -525,6 +597,18 @@ def main() -> None:
         type=int,
         default=64,
         help="Held-out segments evaluated before and after training for like-for-like evidence.",
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=250,
+        help="Steps between atomic checkpoints; lets a run survive a Colab disconnect. 0 disables.",
+    )
+    parser.add_argument(
+        "--eval-max-segments",
+        type=int,
+        default=256,
+        help="Cap segments evaluated per split. 0 evaluates everything (slow on Drive).",
     )
     parser.add_argument("--output-dir", default="outputs/codec_m03_smoke")
     parser.add_argument("--resume", default=None)

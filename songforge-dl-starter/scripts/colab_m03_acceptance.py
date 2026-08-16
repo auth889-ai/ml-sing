@@ -1,8 +1,9 @@
-"""M03 final acceptance runner for Google Colab CUDA.
+"""M03 — Neural Audio Codec & Discrete Audio Representation: Colab CUDA acceptance runner.
 
-Trains the M03 RVQ codec from randomly initialized SongForge weights on the real
-M02 canonical manifest, verifies checkpoint resume, exports held-out listening
-examples, and records the full metric set required by the M03 gate.
+Trains the RVQ codec from randomly initialized SongForge weights on the real
+M02 — Audio Preprocessing & Dataset Pipeline canonical manifest, verifies
+checkpoint resume, exports held-out listening examples, and records the full
+metric set required by the gate.
 
     python scripts/colab_m03_acceptance.py \
         --config configs/codec/codec_m03_tiny.yaml \
@@ -28,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
 
+from songforge.milestones import milestone
 from songforge.training.run import curve_run_ids, read_run_manifest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,7 +74,7 @@ def environment_report(require_cuda: bool) -> dict[str, Any]:
         report.update({"gpu_name": None, "gpu_total_vram_bytes": 0, "gpu_total_vram_gb": 0.0})
     print(json.dumps(report, indent=2, sort_keys=True))
     if require_cuda and not report["cuda_available"]:
-        raise SystemExit("M03 acceptance requires CUDA. Select a Colab GPU runtime and rerun.")
+        raise SystemExit(f"{milestone('M03')} requires CUDA. Select a Colab GPU runtime and rerun.")
     return report
 
 
@@ -110,7 +112,7 @@ def cuda_test_report(require_cuda: bool) -> dict[str, Any]:
     if require_cuda and not all_passed:
         raise SystemExit(
             "CUDA/AMP codec tests did not pass (they may have been skipped). "
-            f"Outcomes: {outcomes}. M03 requires a real GPU runtime."
+            f"Outcomes: {outcomes}. {milestone('M03')} requires a real GPU runtime."
         )
     return report
 
@@ -327,6 +329,7 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
             and used_m02_manifest
             and isolation["ok"]
             and bool(validation_probe.get("after"))
+            and bool(validation_probe.get("same_probe_before_and_after"))
         ),
     }
 
@@ -345,6 +348,8 @@ def collect_required_metrics(acceptance: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "validation_probe_segments": probe.get("segments"),
+        "validation_probe_fingerprint": probe.get("probe_fingerprint"),
+        "validation_same_probe_before_and_after": probe.get("same_probe_before_and_after"),
         "validation_recon_loss_before": before.get("recon_loss"),
         "validation_recon_loss_after": after.get("recon_loss"),
         "validation_l1_before": before.get("waveform_l1"),
@@ -420,11 +425,11 @@ def write_experiment_log(path: Path, report: dict[str, Any]) -> None:
         return str(value)
 
     lines = [
-        "# Experiment Log",
+        f"# Experiment Log — {milestone('M03')}",
         "",
-        "## M03 Colab Final Acceptance",
+        f"## {milestone('M03')}: Colab Final Acceptance",
         "",
-        f"Status: **M03 {status}**",
+        f"Status: **{milestone('M03')} = {status}**",
         "",
         f"Run: `{report['run_label']}`",
         "",
@@ -469,6 +474,8 @@ def write_experiment_log(path: Path, report: dict[str, Any]) -> None:
             f"| Final MR-STFT (windowed mean) | `{fmt(metrics['final_mrstft_windowed'])}` |",
             f"| Loss decreased (windowed) | `{acceptance['loss_decreased']}` |",
             f"| Validation probe segments (held-out) | `{fmt(metrics['validation_probe_segments'])}` |",
+            f"| Validation probe fingerprint | `{metrics['validation_probe_fingerprint']}` |",
+            f"| Same probe before and after | `{metrics['validation_same_probe_before_and_after']}` |",
             f"| Validation recon loss BEFORE | `{fmt(metrics['validation_recon_loss_before'])}` |",
             f"| Validation recon loss AFTER | `{fmt(metrics['validation_recon_loss_after'])}` |",
             f"| Validation L1 BEFORE | `{fmt(metrics['validation_l1_before'])}` |",
@@ -662,6 +669,18 @@ def parse_args() -> argparse.Namespace:
         default=64,
         help="Held-out segments evaluated before and after training.",
     )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=250,
+        help="Steps between atomic checkpoints so a Colab disconnect is resumable.",
+    )
+    parser.add_argument(
+        "--eval-max-segments",
+        type=int,
+        default=256,
+        help="Cap segments evaluated per split; unbounded evaluation exhausted the runtime.",
+    )
     parser.add_argument("--export-examples", type=int, default=5)
     parser.add_argument("--allow-cpu", action="store_true", help="Debug only; M03 acceptance requires CUDA.")
     parser.add_argument("--log-path", default="docs/EXPERIMENT_LOG.md")
@@ -683,7 +702,7 @@ def main() -> None:
 
     pytest_result = run_command([sys.executable, "-m", "pytest", "-q"])
     if pytest_result["returncode"] != 0:
-        raise SystemExit("Full test suite failed; not running M03 acceptance.")
+        raise SystemExit(f"Full test suite failed; not running {milestone('M03')} acceptance.")
     cuda_result = cuda_test_report(require_cuda=require_cuda)
 
     data_args: list[str] = []
@@ -702,7 +721,16 @@ def main() -> None:
         "--rvq-log-every", str(args.rvq_log_every),
         "--run-label", args.run_label,
         "--validation-probe", str(args.validation_probe),
+        "--checkpoint-every", str(args.checkpoint_every),
+        "--eval-max-segments", str(args.eval_max_segments),
     ]
+
+    # Resume an interrupted run of THIS experiment rather than starting a second
+    # one. A Colab disconnect must not cost the run its identity: the same run_id
+    # continues, and replayed rows are retired so steps stay unique.
+    existing = read_run_manifest(output_dir)
+    latest_checkpoint = output_dir / "checkpoint_latest.pt"
+    resume_training = bool(existing and latest_checkpoint.exists())
 
     train_command = [
         sys.executable, "scripts/train_codec.py",
@@ -711,11 +739,17 @@ def main() -> None:
         "--steps", str(args.steps),
         "--export-examples", str(args.export_examples),
     ]
+    if resume_training:
+        train_command += ["--resume", str(latest_checkpoint)]
+        print(
+            f"\nResuming existing run {existing.get('run_id')} from {latest_checkpoint.name} "
+            "(same logical experiment)\n"
+        )
     if device == "cuda":
         train_command.append("--amp")
     train_result = run_command(train_command)
     if train_result["returncode"] != 0:
-        raise SystemExit("Training failed; M03 acceptance failed.")
+        raise SystemExit(f"Training failed; {milestone('M03')} acceptance failed.")
 
     resume_output_dir = output_dir / "resume_check"
     resume_command = [
@@ -787,8 +821,8 @@ def main() -> None:
     print(f"log    : {log_path}")
 
     if not acceptance["acceptance_pass"] or resume_result["returncode"] != 0:
-        raise SystemExit(f"M03 acceptance FAIL. Inspect {output_dir / 'm03_acceptance_report.json'}.")
-    print("\nM03 acceptance PASS")
+        raise SystemExit(f"{milestone('M03')} = FAIL. Inspect {output_dir / 'm03_acceptance_report.json'}.")
+    print(f"\n{milestone('M03')} = PASS")
 
 
 if __name__ == "__main__":
