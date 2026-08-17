@@ -1,0 +1,46 @@
+model:
+  base_channels: 16
+  channels: 1
+  codebook_size: 128
+  commitment_weight: 0.25
+  latent_dim: 32
+  num_quantizers: 2
+  sample_rate: 24000
+  strides:
+  - 4
+  - 4
+  - 5
+  - 6
+training:
+  amp: true
+  batch_size: 2
+  betas:
+  - 0.9
+  - 0.95
+  fft_sizes:
+  - 256
+  - 512
+  - 1024
+  grad_clip: 1.0
+  learning_rate: 0.0003
+  seed: 42
+  segment_samples: 24000
+  spectral_weight: 1.0
+  steps: 20
+  vq_weight: 1.0
+  waveform_weight: 1.0
+  weight_decay: 0.0
+m04:
+  candidate: m04_b_50hz_q2
+  stage: 1
+  note: lowest stage-1 rate, same depth
+  latent_frame_rate_hz: 50.0
+  downsample_factor: 480
+  num_quantizers: 2
+  codebook_size: 128
+  bits_per_code: 7
+  bitrate_bps: 700.0
+  pcm16_compression_ratio: 548.5714285714286
+  raw_codec_codes_per_10s: 1000.0
+  raw_codec_codes_per_30s: 3000.0
+  raw_codec_codes_per_180s: 18000.0

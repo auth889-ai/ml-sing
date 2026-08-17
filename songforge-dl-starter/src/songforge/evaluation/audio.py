@@ -12,7 +12,90 @@ from songforge.losses.audio import (
 
 
 @torch.no_grad()
-def reconstruction_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float]:
+def si_sdr(pred: torch.Tensor, target: torch.Tensor) -> float:
+    """Scale-invariant SDR in dB.
+
+    Unlike plain SNR this is immune to a global gain difference, so a codec that
+    reconstructs the waveform shape but not its level is not unfairly punished.
+    """
+    pred_flat = pred.reshape(-1).float()
+    target_flat = target.reshape(-1).float()
+    target_energy = target_flat.pow(2).sum().clamp_min(1e-12)
+    alpha = torch.dot(pred_flat, target_flat) / target_energy
+    projection = alpha * target_flat
+    noise = pred_flat - projection
+    ratio = projection.pow(2).sum().clamp_min(1e-12) / noise.pow(2).sum().clamp_min(1e-12)
+    return float(10.0 * torch.log10(ratio))
+
+
+def _magnitude(signal: torch.Tensor, n_fft: int) -> torch.Tensor:
+    flat = signal.reshape(-1).float()
+    if flat.numel() < n_fft:
+        flat = torch.nn.functional.pad(flat, (0, n_fft - flat.numel()))
+    window = torch.hann_window(n_fft, device=flat.device)
+    return torch.stft(flat, n_fft=n_fft, hop_length=n_fft // 4, window=window, return_complex=True).abs()
+
+
+@torch.no_grad()
+def log_spectral_distance(pred: torch.Tensor, target: torch.Tensor, n_fft: int = 1024) -> float:
+    """RMS difference of log-magnitude spectra, in dB. Lower is closer."""
+    p = _magnitude(pred, n_fft).clamp_min(1e-8)
+    y = _magnitude(target, n_fft).clamp_min(1e-8)
+    diff = 20.0 * (torch.log10(p) - torch.log10(y))
+    return float(diff.pow(2).mean().sqrt())
+
+
+@torch.no_grad()
+def transient_preservation(pred: torch.Tensor, target: torch.Tensor, n_fft: int = 1024) -> float:
+    """Correlation of onset envelopes, in [-1, 1]. 1 means transients line up.
+
+    Percussive detail is the first thing an aggressively downsampled codec loses,
+    and waveform L1 barely registers it, so M04 measures it directly.
+    """
+    p = _magnitude(pred, n_fft)
+    y = _magnitude(target, n_fft)
+    frames = min(p.size(-1), y.size(-1))
+    if frames < 3:
+        return 0.0
+    p_env = (p[:, 1:frames] - p[:, : frames - 1]).clamp_min(0).sum(dim=0)
+    y_env = (y[:, 1:frames] - y[:, : frames - 1]).clamp_min(0).sum(dim=0)
+    p_env = p_env - p_env.mean()
+    y_env = y_env - y_env.mean()
+    denominator = (p_env.norm() * y_env.norm()).clamp_min(1e-8)
+    return float(torch.dot(p_env, y_env) / denominator)
+
+
+@torch.no_grad()
+def high_frequency_preservation(
+    pred: torch.Tensor, target: torch.Tensor, sample_rate: int = 24000, cutoff_hz: float = 4000.0,
+    n_fft: int = 1024,
+) -> float:
+    """Ratio of reconstructed to original energy above `cutoff_hz`, in dB.
+
+    0 dB is perfect; negative means the codec dulled the top end, which is the
+    characteristic failure of a low latent rate.
+    """
+    p = _magnitude(pred, n_fft)
+    y = _magnitude(target, n_fft)
+    freqs = torch.linspace(0, sample_rate / 2, p.size(0), device=p.device)
+    band = freqs > cutoff_hz
+    if not bool(band.any()):
+        return 0.0
+    p_energy = p[band].pow(2).sum().clamp_min(1e-12)
+    y_energy = y[band].pow(2).sum().clamp_min(1e-12)
+    return float(10.0 * torch.log10(p_energy / y_energy))
+
+
+@torch.no_grad()
+def reconstruction_metrics(
+    pred: torch.Tensor, target: torch.Tensor, sample_rate: int = 24000
+) -> dict[str, float]:
+    """Objective reconstruction quality.
+
+    The extra measures beyond L1/MR-STFT exist because M04 compares codecs at
+    different latent rates, where a single distortion number hides which kind of
+    detail was traded away.
+    """
     noise = target - pred
     snr = 10.0 * torch.log10(target.pow(2).mean().clamp_min(1e-8) / noise.pow(2).mean().clamp_min(1e-8))
     return {
@@ -20,6 +103,10 @@ def reconstruction_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str
         "mrstft": float(multi_resolution_stft_loss(pred, target).item()),
         "spectral_convergence": float(spectral_convergence(pred, target).item()),
         "snr_db": float(snr.item()),
+        "si_sdr_db": si_sdr(pred, target),
+        "log_spectral_distance_db": log_spectral_distance(pred, target),
+        "transient_preservation": transient_preservation(pred, target),
+        "high_frequency_preservation_db": high_frequency_preservation(pred, target, sample_rate),
     }
 
 

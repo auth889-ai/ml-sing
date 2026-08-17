@@ -1,0 +1,46 @@
+model:
+  base_channels: 16
+  channels: 1
+  codebook_size: 128
+  commitment_weight: 0.25
+  latent_dim: 32
+  num_quantizers: 2
+  sample_rate: 24000
+  strides:
+  - 2
+  - 4
+  - 5
+  - 5
+training:
+  amp: true
+  batch_size: 2
+  betas:
+  - 0.9
+  - 0.95
+  fft_sizes:
+  - 256
+  - 512
+  - 1024
+  grad_clip: 1.0
+  learning_rate: 0.0003
+  seed: 42
+  segment_samples: 24000
+  spectral_weight: 1.0
+  steps: 20
+  vq_weight: 1.0
+  waveform_weight: 1.0
+  weight_decay: 0.0
+m04:
+  candidate: m04_baseline_120hz_q2
+  stage: 1
+  note: M03 control reproduced under M04 conditions
+  latent_frame_rate_hz: 120.0
+  downsample_factor: 200
+  num_quantizers: 2
+  codebook_size: 128
+  bits_per_code: 7
+  bitrate_bps: 1680.0
+  pcm16_compression_ratio: 228.57142857142858
+  raw_codec_codes_per_10s: 2400.0
+  raw_codec_codes_per_30s: 7200.0
+  raw_codec_codes_per_180s: 43200.0
