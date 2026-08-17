@@ -1,0 +1,10 @@
+id,overall,realism,instrument_presence,arrangement,prompt_adherence,artifacts,coherence,vocal_realism,lyric_intelligibility,phrasing,pitch_stability,emotion,notes
+_legend,all scores 1-10 where 10 is BEST,artifacts=10 means FREE of artifacts,leave vocal columns blank for instrumental tracks,blank means not scored,,,,,,,,,
+piano,,,,,,,,,,,,,
+violin,,,,,,,,,,,,,
+guitar,,,,,,,,,,,,,
+rock,,,,,,,,,,,,,
+edm,,,,,,,,,,,,,
+cinematic,,,,,,,,,,,,,
+vocal,,,,,,,,,,,,,
+rich_mix,,,,,,,,,,,,,
