@@ -153,7 +153,7 @@ INSTRUMENT_CATEGORIES = {
     "guitar": ("Guitar",),
     "bass": ("Bass",),
     "percussion": ("Drums",),
-    "strings": ("Strings",),
+    "strings": ("Strings", "Strings (continued)"),
     "full_mix": ("Mixture",),
 }
 
