@@ -230,7 +230,39 @@ def integrity_ok(row: dict[str, Any]) -> bool:
     )
 
 
-def write_comparison(rows: list[dict[str, Any]], output_root: Path) -> tuple[Path, Path]:
+def dataset_provenance(train_manifest: str, val_manifest: str) -> list[str]:
+    """Describe the corpus the candidates were actually compared on.
+
+    Named explicitly because a codec chosen on a narrow slice is not a
+    project-wide choice, and the report has to say which slice it was.
+    """
+    from songforge.data.manifest import read_jsonl
+
+    lines = []
+    for label, path in (("train", train_manifest), ("validation", val_manifest)):
+        try:
+            records = read_jsonl(path)
+        except OSError:
+            lines.append(f"- {label}: `{path}` (unreadable at report time)")
+            continue
+        seconds = sum(record.duration_seconds for record in records)
+        families = {r.instrument_family for r in records if r.instrument_family}
+        lines.append(
+            f"- {label}: `{path}` — {len(records)} segments, "
+            f"{len({r.track_id for r in records})} songs, "
+            f"{len({r.source_path for r in records if r.source_path})} source files, "
+            f"{seconds / 60.0:.1f} min"
+            + (f", {len(families)} instrument families" if families else "")
+        )
+    return lines
+
+
+def write_comparison(
+    rows: list[dict[str, Any]],
+    output_root: Path,
+    train_manifest: str | None = None,
+    val_manifest: str | None = None,
+) -> tuple[Path, Path]:
     """Objective comparison table. No selection is made here; that is a human call."""
     def fmt(value: Any, digits: int = 4) -> str:
         if value is None:
@@ -242,9 +274,15 @@ def write_comparison(rows: list[dict[str, Any]], output_root: Path) -> tuple[Pat
     lines = [
         f"# {milestone('M04')}: candidate comparison",
         "",
-        "All candidates share the same M02 train/validation manifests, the same training",
+        "All candidates share the same train/validation manifests, the same training",
         "budget, the same deterministic held-out probe segments, and the same evaluation",
         "procedure. Each ran in its own isolated directory.",
+        "",
+        "## Corpus the comparison was run on",
+        "",
+        *(dataset_provenance(train_manifest, val_manifest)
+          if train_manifest and val_manifest
+          else ["- manifests not recorded for this report"]),
         "",
         "## Representation and long-form cost",
         "",
@@ -376,7 +414,7 @@ def main() -> None:
                 )
 
     rows = [collect_candidate(name, output_root) for name in names]
-    md, js = write_comparison(rows, output_root)
+    md, js = write_comparison(rows, output_root, args.train_manifest, args.val_manifest)
 
     print("\n" + json.dumps(
         [
