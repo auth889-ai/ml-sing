@@ -79,19 +79,24 @@ def split_paths(paths: list[Path], val_fraction: float) -> tuple[list[Path], lis
 
 
 def resolve_paths(args: argparse.Namespace) -> tuple[list[Path], list[Path], str]:
-    """Prefer the M02 canonical manifests; fall back to ad-hoc globbing for debugging.
+    """Prefer canonical manifests; fall back to ad-hoc globbing for debugging.
 
-    The M02 split is song-disjoint, so using it here is what makes validation
-    genuinely held out. Splitting a glob by file order does not guarantee that.
+    A canonical split is song-disjoint, which is what makes validation genuinely
+    held out. Splitting a glob by file order does not guarantee that.
+
+    The returned label names the manifest directory rather than a milestone, so a
+    run recorded against an expanded corpus is not filed under the milestone that
+    happened to create the first one.
     """
     if args.train_manifest:
+        corpus = Path(args.train_manifest).parent.parent.name or "manifest"
         train_paths = read_audio_paths(manifest=args.train_manifest)
         if args.val_manifest:
             val_paths = read_audio_paths(manifest=args.val_manifest)
         else:
             train_paths, val_paths = split_paths(train_paths, float(args.val_fraction))
-            return train_paths, val_paths, "m02_manifest_train_only"
-        return train_paths, val_paths, "m02_manifest"
+            return train_paths, val_paths, f"manifest:{corpus}:train_only"
+        return train_paths, val_paths, f"manifest:{corpus}"
 
     paths = read_audio_paths(args.manifest, args.audio_glob)
     train_paths, val_paths = split_paths(paths, float(args.val_fraction))
