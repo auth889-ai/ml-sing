@@ -16,10 +16,11 @@ import threading
 import time
 import uuid
 from collections import OrderedDict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 class JobStatus(str, Enum):

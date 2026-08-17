@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from songforge.generation import (  # noqa: E402
+from songforge.generation import (
     Section,
     SongRequest,
     VocalSpec,
@@ -40,8 +40,8 @@ from songforge.generation import (  # noqa: E402
     resolve_controls,
 )
 
-from .config import SETTINGS  # noqa: E402
-from .jobs import Job, JobQueue, JobStatus, RateLimiter, cleanup_expired  # noqa: E402
+from .config import SETTINGS
+from .jobs import Job, JobQueue, JobStatus, RateLimiter, cleanup_expired
 
 app = FastAPI(title="SongForge API", version="1.0")
 app.add_middleware(
