@@ -178,3 +178,68 @@ def test_vocal_prompts_carry_lyrics():
     assert requests["vocal"].lyrics and requests["rich_mix"].lyrics
     assert requests["vocal"].wants_vocals
     assert not requests["piano"].wants_vocals
+
+
+# --- ACE-Step capability declaration ---------------------------------------
+
+
+def test_acestep_declares_untyped_controls_as_soft_not_native():
+    """genre/mood/instruments are caption text in ACE-Step, not typed fields.
+
+    Declaring them NATIVE would tell the evaluation a style request was honoured
+    as a constraint when the model only ever saw free text.
+    """
+    from songforge.generation.adapters.acestep import AceStepAdapter
+
+    caps = AceStepAdapter().capabilities
+    for control in ("genre", "mood", "instruments", "vocal_style", "structure"):
+        assert caps.support(control) is ControlSupport.PROMPT, control
+    for control in ("prompt", "lyrics", "duration", "bpm", "key", "seed"):
+        assert caps.support(control) is ControlSupport.NATIVE, control
+
+
+def test_acestep_records_code_and_weights_licences_separately():
+    from songforge.generation.adapters.acestep import AceStepAdapter
+
+    position = AceStepAdapter().license
+    assert position.code_license == "MIT"
+    assert position.weights_license == "MIT"
+    assert position.sources, "a licence claim needs a source"
+
+
+def test_acestep_prompt_composition_folds_in_the_untyped_controls():
+    from songforge.generation.adapters.acestep import AceStepAdapter
+
+    request = SongRequest(
+        prompt="A cinematic song.", genre=("pop rock",), mood=("epic",),
+        instruments=("piano", "strings"), vocal=VocalSpec(gender="female", style="powerful"),
+    )
+    text = AceStepAdapter()._compose_prompt(request)
+    assert "pop rock" in text and "epic" in text
+    assert "piano" in text and "strings" in text
+    assert "female" in text and "vocal" in text
+
+
+def test_acestep_marks_an_instrumental_request_explicitly():
+    from songforge.generation.adapters.acestep import AceStepAdapter
+
+    request = SongRequest(prompt="A piano piece.", vocal=VocalSpec(present=False))
+    assert "instrumental" in AceStepAdapter()._compose_prompt(request)
+
+
+def test_acestep_structure_only_request_still_emits_tags():
+    from songforge.generation.adapters.acestep import AceStepAdapter
+
+    request = SongRequest(prompt="edm", structure=(Section("intro"), Section("drop")))
+    lyrics = AceStepAdapter()._compose_lyrics(request)
+    assert "[intro]" in lyrics and "[drop]" in lyrics
+
+
+def test_acestep_benchmark_requests_resolve_without_dropping_anything():
+    """Every benchmark prompt must be expressible on this model."""
+    from songforge.generation.adapters.acestep import AceStepAdapter
+
+    caps = AceStepAdapter().capabilities
+    for request in load_prompts(BENCHMARK):
+        resolution = resolve_controls(request, caps)
+        assert resolution.honest, (request.extra["id"], resolution.warnings)
