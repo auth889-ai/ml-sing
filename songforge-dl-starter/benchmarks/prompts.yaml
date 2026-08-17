@@ -1,0 +1,157 @@
+# SongForge foundation benchmark — identical inputs for every candidate model.
+#
+# These eight prompts are the decision set. Every candidate foundation generates
+# all eight with the same seed, duration, lyrics, BPM and structure wherever the
+# model genuinely supports those controls. Controls a model does not support are
+# reported as unsupported, never faked.
+#
+# `expects_instruments` drives the automated instrument-audibility check and the
+# listening scorecard. It is an evaluation target, NOT a generation switch:
+# nothing in SongForge branches on these names to synthesise an instrument.
+
+version: 1
+defaults:
+  seed: 20260818
+  duration_seconds: 60
+  vocal: null
+
+prompts:
+  - id: piano
+    title: Piano ballad
+    prompt: >-
+      Emotional grand piano ballad, slow and intimate, expressive rubato phrasing,
+      warm close-miked acoustic grand piano, gentle dynamics, reflective and tender.
+    genre: [ballad, contemporary classical]
+    mood: [emotional, intimate, reflective]
+    instruments: [grand piano]
+    expects_instruments: [piano]
+    bpm: 68
+    key: F minor
+
+  - id: violin
+    title: Expressive violin / orchestral
+    prompt: >-
+      Romantic orchestral piece with an expressive solo violin over lush string
+      section, warm legato phrasing, rich vibrato, cinematic concert hall space.
+    genre: [orchestral, romantic classical]
+    mood: [romantic, sweeping, expressive]
+    instruments: [solo violin, string section]
+    expects_instruments: [violin, strings]
+    bpm: 76
+    key: D minor
+
+  - id: guitar
+    title: Acoustic guitar song
+    prompt: >-
+      Warm acoustic guitar song, fingerpicked steel-string guitar, natural room
+      sound, gentle folk feel, subtle upright bass and light percussion.
+    genre: [folk, acoustic, singer-songwriter]
+    mood: [warm, gentle, honest]
+    instruments: [acoustic guitar, upright bass, light percussion]
+    expects_instruments: [acoustic_guitar, bass, percussion]
+    bpm: 92
+    key: G major
+
+  - id: rock
+    title: Electric-guitar rock band
+    prompt: >-
+      Modern rock song with driving distorted electric guitar riffs, a soaring
+      guitar solo, punchy live drums, thick electric bass, energetic and loud.
+    genre: [rock, alternative rock]
+    mood: [energetic, driving, powerful]
+    instruments: [electric guitar, bass guitar, drum kit]
+    expects_instruments: [electric_guitar, bass, drums]
+    bpm: 132
+    key: E minor
+
+  - id: edm
+    title: EDM / electronic
+    prompt: >-
+      Modern EDM track with bright supersaw synth leads, deep sub bass, sidechained
+      pads, crisp electronic drums and a powerful build and drop.
+    genre: [edm, electronic, dance]
+    mood: [euphoric, powerful, driving]
+    instruments: [synth lead, sub bass, electronic drums, pads]
+    expects_instruments: [synth, bass, drums]
+    bpm: 128
+    key: A minor
+    structure:
+      - {kind: intro, seconds: 12}
+      - {kind: verse, seconds: 16}
+      - {kind: drop, seconds: 20}
+      - {kind: outro, seconds: 12}
+
+  - id: cinematic
+    title: Cinematic orchestral
+    prompt: >-
+      Epic cinematic orchestral track with soaring strings, grand piano, powerful
+      brass and thunderous percussion, building to a huge triumphant climax.
+    genre: [cinematic, orchestral, trailer]
+    mood: [epic, triumphant, dramatic]
+    instruments: [strings, piano, brass, orchestral percussion]
+    expects_instruments: [strings, piano, brass, percussion]
+    bpm: 90
+    key: C minor
+
+  - id: vocal
+    title: Vocal song with supplied lyrics
+    prompt: >-
+      Contemporary pop song with a clear expressive female lead vocal, piano and
+      light band accompaniment, memorable melodic chorus, clean modern production.
+    genre: [pop]
+    mood: [hopeful, warm]
+    instruments: [piano, bass, drums]
+    expects_instruments: [vocals, piano, bass, drums]
+    bpm: 100
+    key: C major
+    vocal:
+      present: true
+      gender: female
+      style: clear
+      language: en
+    lyrics: |
+      [Verse]
+      Streetlights blur into the falling rain
+      I count the quiet miles again
+      Every door I closed still knows my name
+      But I am not the same
+
+      [Chorus]
+      So let it break, let it burn away
+      I am learning how to stay
+      Every ending taught me how to say
+      I will find another way
+
+      [Bridge]
+      All the years I spent afraid
+      Turn to light, turn to light
+
+  - id: rich_mix
+    title: Rich mixed arrangement
+    prompt: >-
+      Female vocal, grand piano intro, rich violin/string layers, electric guitar
+      chorus, deep bass, live drums, synth textures, large emotional chorus.
+    genre: [cinematic pop rock]
+    mood: [luxurious, cinematic, emotional]
+    instruments: [female vocal, grand piano, violin, strings, electric guitar, bass, drums, synth]
+    expects_instruments: [vocals, piano, violin, strings, electric_guitar, bass, drums, synth]
+    bpm: 96
+    key: A minor
+    vocal:
+      present: true
+      gender: female
+      style: powerful
+      language: en
+    structure:
+      - {kind: intro, seconds: 10, note: solo grand piano}
+      - {kind: verse, seconds: 16}
+      - {kind: chorus, seconds: 20, note: full band and strings}
+      - {kind: outro, seconds: 14}
+    lyrics: |
+      [Verse]
+      Gold light on an empty hall
+      I hear the echo of it all
+
+      [Chorus]
+      And we rise, and we rise
+      Through the fire in our eyes

@@ -269,9 +269,24 @@ codebook-depth question it probes is not yet scientifically useful.
   models use?" It does not claim SongForge can already generate every kind of
   song.
 
-## Status
+## Status — provisional conclusion, Stage 2 deferred
 
-Codec **not frozen**. No selection recorded. Stage 2 **not launched**.
+**Provisional custom-codec conclusion: 120 Hz / Q2 / K128 is the best quality
+observed among the custom codecs tested.** 75 Hz/Q2 and 50 Hz/Q2 reduce raw-code
+pressure but cause meaningful quality degradation at this budget.
+
+This is **not** a universal codec freeze. It is the current standing of the
+custom-representation research track.
+
+**Stage 2 (75 Hz/Q4, 50 Hz/Q4) is deferred, not cancelled.** The CASE 3 analysis
+above still stands as the right next experiment *for the codec track*, but the
+project objective has changed to maximum final-song quality within a fixed
+100-hour budget, and the custom codec is not currently on the critical path to
+that. Stage 2 should be run only if a downstream SongForge experiment shows the
+custom codec actually gating final product quality.
+
+All Stage 1 evidence is preserved and unmodified.
+
 M05 — Musical Representation & Tokenization **not started**.
 
 Related: [M04_DATA_EXPANSION.md](M04_DATA_EXPANSION.md),
