@@ -55,8 +55,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--patterns", nargs="+", default=["*.wav", "*.flac"])
     parser.add_argument("--limit", type=int, default=None, help="Process at most N files (debug).")
     parser.add_argument("--split-mode", default=None, choices=["song", "singer"])
+    parser.add_argument("--split-strategy", default=None, choices=["quota", "weighted", "hash"])
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--no-audio", action="store_true", help="Write manifests only, skip WAV output.")
+    parser.add_argument(
+        "--instrument-metadata",
+        choices=["none", "slakh"],
+        default="none",
+        help="Read real instrument labels from the corpus (Slakh metadata.yaml). Never inferred.",
+    )
     return parser.parse_args()
 
 
@@ -76,6 +83,8 @@ def main() -> None:
     split_payload = dict(raw_config.get("splits", {}))
     if args.split_mode:
         split_payload["mode"] = args.split_mode
+    if args.split_strategy:
+        split_payload["strategy"] = args.split_strategy
     if args.seed is not None:
         split_payload["seed"] = args.seed
     split_config = SplitConfig.from_dict(split_payload)
@@ -103,6 +112,10 @@ def main() -> None:
     print(f"target    : {preprocess_config.sample_rate} Hz, {preprocess_config.channels} ch, "
           f"{preprocess_config.segment_seconds}s segments")
 
+    lookup = None
+    if args.instrument_metadata == "slakh":
+        from songforge.data.slakh_metadata import instrument_lookup as lookup
+
     result = preprocess_paths(
         paths,
         config=preprocess_config,
@@ -110,6 +123,7 @@ def main() -> None:
         output_dir=output_dir,
         dataset_id=args.dataset_id,
         source_root=input_dir,
+        instrument_lookup=lookup,
     )
     if not result.records:
         write_preprocess_report(result, output_dir / "preprocess_report.json")

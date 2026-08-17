@@ -415,3 +415,23 @@ def test_empty_input_raises(tmp_path):
         from songforge.data.audio import read_audio_paths
 
         read_audio_paths(None, str(tmp_path / "nothing" / "*.wav"))
+
+
+# --- archive residue (M04 data expansion) -------------------------------
+
+
+def test_applesingle_stubs_are_not_audio(tmp_path):
+    """`._x.wav` sorts before `x.wav`, so an unfiltered --limit would read only junk."""
+    from songforge.data.preprocess import find_audio_files, is_junk_path
+
+    (tmp_path / "Track00001").mkdir()
+    (tmp_path / "Track00001" / "mix.wav").write_bytes(b"")
+    (tmp_path / "Track00001" / "._mix.wav").write_bytes(b"")
+    (tmp_path / "__MACOSX" / "Track00001").mkdir(parents=True)
+    (tmp_path / "__MACOSX" / "Track00001" / "mix.wav").write_bytes(b"")
+
+    found = find_audio_files(tmp_path)
+    assert [path.name for path in found] == ["mix.wav"]
+    assert "__MACOSX" not in found[0].parts
+    assert is_junk_path(tmp_path / "Track00001" / "._mix.wav")
+    assert not is_junk_path(tmp_path / "Track00001" / "mix.wav")

@@ -146,6 +146,84 @@ def evaluate_validation_probe(
     return metrics
 
 
+#: Listening categories requested for M04, mapped to Slakh instrument families.
+#: A category with no matching held-out audio is reported, never substituted.
+INSTRUMENT_CATEGORIES = {
+    "piano": ("Piano",),
+    "guitar": ("Guitar",),
+    "bass": ("Bass",),
+    "percussion": ("Drums",),
+    "strings": ("Strings",),
+    "full_mix": ("Mixture",),
+}
+
+
+def family_by_path(manifest: str | None) -> dict[str, str]:
+    """Map segment path -> instrument family, read from the manifest."""
+    if not manifest:
+        return {}
+    from songforge.data.manifest import read_jsonl
+
+    return {
+        record.path: record.instrument_family
+        for record in read_jsonl(manifest)
+        if record.instrument_family
+    }
+
+
+@torch.no_grad()
+def export_instrument_examples(
+    model: NeuralCodec,
+    dataset: AudioSegmentDataset,
+    device: torch.device,
+    output_dir: Path,
+    families: dict[str, str],
+) -> dict[str, Any]:
+    """Export one held-out pair per real instrument category.
+
+    Selection is deterministic (lowest hashed path within a family), so every
+    candidate codec is compared on identical source audio. Categories absent
+    from the held-out data are reported as unavailable rather than filled in
+    with something that merely sounds similar.
+    """
+    if not families or len(dataset) == 0:
+        return {"exported": {}, "unavailable": sorted(INSTRUMENT_CATEGORIES)}
+
+    by_family: dict[str, list[int]] = {}
+    for index, path in enumerate(dataset.paths):
+        family = families.get(str(path))
+        if family:
+            by_family.setdefault(family, []).append(index)
+
+    example_dir = output_dir / "examples"
+    exported: dict[str, Any] = {}
+    unavailable: list[str] = []
+    for category, accepted in INSTRUMENT_CATEGORIES.items():
+        candidates = [i for family in accepted for i in by_family.get(family, [])]
+        if not candidates:
+            unavailable.append(category)
+            continue
+        index = min(
+            candidates,
+            key=lambda i: hashlib.sha256(str(dataset.paths[i]).encode("utf-8")).hexdigest(),
+        )
+        audio = dataset[index].unsqueeze(0).to(device)
+        recon = model(audio)["reconstruction"]
+        original = example_dir / f"instrument_{category}_original.wav"
+        reconstructed = example_dir / f"instrument_{category}_reconstructed.wav"
+        write_wav(original, audio.cpu(), model.sample_rate)
+        write_wav(reconstructed, recon.cpu(), model.sample_rate)
+        exported[category] = {
+            "segment_index": index,
+            "source_path": str(dataset.paths[index]),
+            "instrument_family": families.get(str(dataset.paths[index])),
+            "original": str(original),
+            "reconstructed": str(reconstructed),
+            "metrics": reconstruction_metrics(recon, audio, model.sample_rate),
+        }
+    return {"exported": exported, "unavailable": sorted(unavailable)}
+
+
 @torch.no_grad()
 def export_character_examples(
     model: NeuralCodec,
@@ -561,6 +639,19 @@ def train(args: argparse.Namespace) -> None:
         json.dumps(character_examples, indent=2, sort_keys=True), encoding="utf-8"
     )
     print(f"exported {len(character_examples)} held-out character examples: {sorted(character_examples)}")
+
+    instrument_examples = export_instrument_examples(
+        model, val_dataset, device, output_dir, family_by_path(args.val_manifest)
+    )
+    (output_dir / "instrument_examples.json").write_text(
+        json.dumps(instrument_examples, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    print(
+        f"exported {len(instrument_examples['exported'])} held-out instrument examples: "
+        f"{sorted(instrument_examples['exported'])}"
+        + (f" | unavailable in this corpus: {instrument_examples['unavailable']}"
+           if instrument_examples["unavailable"] else "")
+    )
 
     metadata = {
         "run_id": run_id,

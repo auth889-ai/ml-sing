@@ -29,13 +29,13 @@ class SplitConfig:
     test: float = 0.1
     seed: int = 42
     mode: str = "song"  # "song" (song-disjoint) or "singer" (singer-disjoint)
-    strategy: str = "quota"  # "quota" (balanced) or "hash" (pure hash bucketing)
+    strategy: str = "quota"  # "quota" | "weighted" | "hash"
 
     def validate(self) -> None:
         if self.mode not in ("song", "singer"):
             raise ValueError(f"mode must be 'song' or 'singer', got {self.mode!r}")
-        if self.strategy not in ("quota", "hash"):
-            raise ValueError(f"strategy must be 'quota' or 'hash', got {self.strategy!r}")
+        if self.strategy not in ("quota", "weighted", "hash"):
+            raise ValueError(f"strategy must be 'quota', 'weighted' or 'hash', got {self.strategy!r}")
         for name in SPLIT_NAMES:
             if getattr(self, name) < 0:
                 raise ValueError(f"{name} ratio must be >= 0")
@@ -122,11 +122,62 @@ def plan_group_splits(keys: Iterable[str], config: SplitConfig) -> dict[str, str
     return plan
 
 
+def plan_weighted_group_splits(weights: dict[str, float], config: SplitConfig) -> dict[str, str]:
+    """Balance splits by total weight while keeping whole groups intact.
+
+    Counting groups treats a 30-second song and a 6-minute song as equal, which
+    on a small corpus can hand validation more audio than training. This walks
+    groups heaviest-first and gives each to whichever split is furthest below its
+    target share. Deterministic: ties break on the seeded hash ordering.
+    """
+    config.validate()
+    if not weights:
+        return {}
+    active = config.active
+    total_ratio = sum(ratio for _, ratio in active)
+    total_weight = sum(weights.values()) or 1.0
+    targets = {name: total_weight * ratio / total_ratio for name, ratio in active}
+    assigned: dict[str, float] = {name: 0.0 for name, _ in active}
+
+    ordered = sorted(
+        weights,
+        key=lambda key: (-weights[key], _hash_position(config.seed, config.mode, key), key),
+    )
+    plan: dict[str, str] = {}
+    for key in ordered:
+        # Prefer a split that still has room; deficit is measured as a share of
+        # its own target so small splits are not starved by a big one.
+        name = max(active, key=lambda item: (targets[item[0]] - assigned[item[0]]) / max(targets[item[0]], 1e-9))[0]
+        plan[key] = name
+        assigned[name] += weights[key]
+
+    # Every requested split must receive at least one group when there are enough.
+    if len(weights) >= len(active):
+        for name, _ in active:
+            if name in plan.values():
+                continue
+            donor = max(assigned, key=lambda candidate: assigned[candidate])
+            movable = [k for k, v in plan.items() if v == donor]
+            if len(movable) > 1:
+                lightest = min(movable, key=lambda k: weights[k])
+                plan[lightest] = name
+                assigned[donor] -= weights[lightest]
+                assigned[name] += weights[lightest]
+    return plan
+
+
 def assign_splits(records: Iterable[AudioRecord], config: SplitConfig | None = None) -> list[AudioRecord]:
     """Return copies of ``records`` with ``split`` set group-disjointly."""
     config = config or SplitConfig()
     records = list(records)
-    plan = plan_group_splits((group_key(record, config.mode) for record in records), config)
+    if config.strategy == "weighted":
+        weights: dict[str, float] = {}
+        for record in records:
+            key = group_key(record, config.mode)
+            weights[key] = weights.get(key, 0.0) + float(record.duration_seconds or 1.0)
+        plan = plan_weighted_group_splits(weights, config)
+    else:
+        plan = plan_group_splits((group_key(record, config.mode) for record in records), config)
     return [replace(record, split=plan[group_key(record, config.mode)]) for record in records]
 
 

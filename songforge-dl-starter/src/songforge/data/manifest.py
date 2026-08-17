@@ -58,6 +58,13 @@ class AudioRecord:
     clipping_ratio: float = 0.0
     silent: bool = False
 
+    # --- instrument metadata (M04): read from the corpus, never guessed ---
+    stem_id: str | None = None
+    instrument_name: str | None = None
+    instrument_family: str | None = None
+    midi_program: int | None = None
+    is_drum: bool | None = None
+
     # --- M02 integrity and duplicate-detection hooks ---
     audio_sha256: str | None = None
     source_sha256: str | None = None

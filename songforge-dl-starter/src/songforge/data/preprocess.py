@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -232,6 +232,7 @@ def preprocess_file(
     singer_id: str | None = None,
     tags: Iterable[str] | None = None,
     source_root: str | Path | None = None,
+    instrument_lookup: Callable[[Path], dict[str, Any]] | None = None,
 ) -> tuple[list[AudioRecord], list[dict]]:
     """Preprocess one file into canonical segment records.
 
@@ -286,6 +287,9 @@ def preprocess_file(
             {"path": str(path), "stage": "duration", "reasons": [f"decoded duration {duration:.3f}s too short"]}
         ]
 
+    # Instrument labels are read from the corpus, never inferred. An unlabelled
+    # file stays unlabelled rather than receiving a guess.
+    instrument = dict(instrument_lookup(path)) if instrument_lookup else {}
     resolved_track = track_id or derive_track_id(path, dataset_id, source_root)
     resolved_singer = singer_id if singer_id is not None else derive_singer_id(path, dataset_id)
     normalized_tags = normalize_tags(tags)
@@ -363,6 +367,11 @@ def preprocess_file(
                 silent=silent,
                 audio_sha256=waveform_sha256(segment, config.sample_rate),
                 source_sha256=source_hash,
+                stem_id=instrument.get("stem_id"),
+                instrument_name=instrument.get("instrument_name"),
+                instrument_family=instrument.get("instrument_family"),
+                midi_program=instrument.get("midi_program"),
+                is_drum=instrument.get("is_drum"),
                 provenance=dict(provenance),
                 preprocessing=preprocessing,
             )
@@ -379,6 +388,7 @@ def preprocess_paths(
     dataset_id: str = "",
     source_root: str | Path | None = None,
     tags: Iterable[str] | None = None,
+    instrument_lookup: Callable[[Path], dict[str, Any]] | None = None,
 ) -> PreprocessResult:
     """Preprocess many files in sorted order so output is order-independent."""
     output_dir = Path(output_dir)
@@ -394,6 +404,7 @@ def preprocess_paths(
             dataset_id=dataset_id,
             source_root=source_root,
             tags=tags,
+            instrument_lookup=instrument_lookup,
         )
         result.records.extend(records)
         result.skipped.extend(skipped)
@@ -406,6 +417,9 @@ def preprocess_paths(
         "segments": len(result.records),
         "tracks": len({record.track_id for record in result.records}),
         "singers": len({record.singer_id for record in result.records if record.singer_id}),
+        "instrument_families": sorted(
+            {record.instrument_family for record in result.records if record.instrument_family}
+        ),
         "total_seconds": round(sum(record.duration_seconds for record in result.records), 6),
         "sample_rate": config.sample_rate,
         "channels": config.channels,
@@ -414,12 +428,25 @@ def preprocess_paths(
     return result
 
 
+#: Archive residue that carries a real audio suffix but is not audio. Unzipping a
+#: macOS-created archive leaves AppleDouble stubs (``._name.wav``) beside the real
+#: files, and they sort first, so an unfiltered ``--limit`` would read only junk.
+JUNK_DIRS = frozenset({"__MACOSX"})
+JUNK_PREFIX = "._"
+
+
+def is_junk_path(path: str | Path) -> bool:
+    """True for archive residue that must never enter a manifest."""
+    path = Path(path)
+    return path.name.startswith(JUNK_PREFIX) or bool(JUNK_DIRS.intersection(path.parts))
+
+
 def find_audio_files(root: str | Path, patterns: Sequence[str] = ("*.wav", "*.flac")) -> list[Path]:
-    """Recursively collect audio files under ``root`` in deterministic order."""
+    """Recursively collect real audio files under ``root`` in deterministic order."""
     root = Path(root)
     found: set[Path] = set()
     for pattern in patterns:
-        found.update(root.rglob(pattern))
+        found.update(path for path in root.rglob(pattern) if not is_junk_path(path))
     return sorted(found, key=lambda item: item.as_posix())
 
 
