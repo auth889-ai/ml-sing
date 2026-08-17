@@ -51,11 +51,43 @@ kept for a specific role.
 | fine-tuning | ✅ (community tooling only; no official scripts) | 
 | product foundation | ✅ with attribution |
 
-### 3. ACE-Step 1.5 — your named primary candidate
+### 3. ACE-Step 1.5 — best fine-tuning story, MIT throughout
 
-**Audit pending.** Research agent returned its closing note without the briefing
-body; a full re-request is in flight. **No weights will be downloaded for this
-candidate until its code and weights licences are recorded here.**
+| field | value |
+| --- | --- |
+| repos | `github.com/ace-step/ACE-Step-1.5` · HF `ACE-Step/acestep-v15-{base,sft,turbo}` (2B) and `-xl-{base,sft,turbo}` (4B) · LM planners `ACE-Step/acestep-5Hz-lm-{0.6B,1.7B,4B}` |
+| **code licence** | **MIT** |
+| **weights licence** | **MIT** — all official 1.5 and XL checkpoints |
+| ⚠️ version trap | **legacy ACE-Step v1 is Apache-2.0; v1.5 is MIT.** Different licences — do not carry v1 terms forward. |
+| commercial use | **allowed.** Model card: *"Trained on legally compliant datasets. Generated music can be used for commercial purposes."* |
+| attribution | MIT notice for the software. **None required for generated audio.** |
+| redistribution | unrestricted |
+| training data | 27M-sample corpus. **No dataset list, no provenance audit.** The commercial-safety claim is an unaudited vendor assertion; a formal request for written output-rights terms (Discussion #1256, Jun 2026) has **zero replies**. |
+| ⚠️ tooling trap | the popular low-VRAM trainer **Side-Step is CC BY-NC-SA 4.0**, not MIT. The official Gradio/LoKr path is MIT. |
+| research baseline | ✅ |
+| fine-tuning | ✅ **only candidate with official in-repo LoRA + LoKr training**, documented dataset format, `--resume-from` checkpointing |
+| product foundation | ✅ |
+
+**Controls — this is the most precisely known of any candidate.**
+
+Genuinely typed conditioning inputs: `prompt`, `lyrics`, `audio_duration`,
+`vocal_language`, **`bpm`**, **`keyscale`**, **`timesignature`**, seed,
+`guidance_scale`, `reference_audio`.
+
+Prompt text only, *not* typed fields: **genre, mood, instruments, timbre, vocal
+gender/style.** Structure tags are bracket markers embedded in the lyrics string,
+not a separate field.
+
+Not supported at all: **chord progression** and **melody conditioning** (both
+closed as not-planned). Relevant to the SongForge goal — if learned song planning
+needs melody or harmony as real controls, ACE-Step offers no hook.
+
+⚠️ **Seed reproducibility is currently broken** when the LM planner's `thinking`
+is enabled (the default): the planner's sampling is unseeded. Fix PR #1283 is
+open and unmerged. Must be validated before the benchmark relies on seeds.
+
+**Capabilities:** 48 kHz stereo, 10–600 s, 50+ vocal languages, structure and
+vocal-control tags, plus cover/repaint/stem-extract task types.
 
 ### 4. DiffRhythm 2 / v1.2 — clean licence, no fine-tuning path
 
@@ -127,7 +159,18 @@ both.
 | MiniMax Music 3 | ~11B | ❌ bf16 required; 8 GB path is slow group-offload | ✅ ~22–24 GB w/ offload | ✅ | 24 GB min, 48 GB recommended |
 | DiffRhythm v1.2 | 1.1B | ✅ 8 GB with `--chunked` | ✅ | ✅ | n/a — no fine-tuning |
 | Stable Audio 3 Medium | 1.4B | ⚠️ FA2 blocks Turing | ✅ 6.5 GB | ✅ | ~5.5 GB |
-| ACE-Step 1.5 | pending | pending | pending | pending | pending |
+| ACE-Step 1.5 (2B turbo) | 2B | 🚩 **lyrics fail deterministically** | ✅ | ✅ | 16 GB min / 20 GB rec. |
+| ACE-Step 1.5 XL (sft) | 4B | ❌ | ✅ 20–24 GB | ✅ | 20 GB+ |
+
+**The T4 finding is now concrete, not theoretical.** ACE-Step on a T4 raises
+`RuntimeError: Generation produced NaN or Inf latents` **whenever lyrics are
+non-empty** — instrumental generation works, lyrics-to-song does not. The dtype
+fallback is hardcoded (`major >= 8` → bf16 else fp16) with no CUDA override, and
+the documented `ACESTEP_DTYPE=float32` escape is confirmed by a maintainer as
+*"not currently wired into the DiT init dtype path"*. A measured T4 instrumental
+run was ~168 s for a 30 s clip at 11.5 GB peak — 5.6× slower than realtime, for
+the one mode that works. FlashAttention-2 is **not** required (SDPA and eager
+paths exist); bf16 is the blocker.
 
 **Working decision: L4 is the floor, not the T4.** Compute-unit cost differs
 sharply (T4 ≈ 1.8 CU/hr, L4 ≈ 5 CU/hr, A100 ≈ 15 CU/hr), so the plan is L4 for
