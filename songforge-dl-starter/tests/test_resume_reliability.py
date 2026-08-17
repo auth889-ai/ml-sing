@@ -16,6 +16,7 @@ import torch
 
 from songforge.models.codec.model import NeuralCodec
 from songforge.training.checkpoint import (
+    RngRestoreError,
     capture_rng_state,
     load_checkpoint,
     restore_rng_state,
@@ -228,7 +229,40 @@ def test_rng_restore_accepts_a_non_cpu_style_state():
     assert restore_rng_state(state) is True
 
 
-def test_rng_restore_never_raises_on_garbage():
-    """An unresumable run is worse than a restarted RNG stream."""
-    assert restore_rng_state({"torch": "not a tensor"}) is False
-    assert restore_rng_state(None) is False
+# --- strictness on the authoritative path -------------------------------
+
+
+def test_authoritative_resume_refuses_unrestorable_rng():
+    """A silently reset RNG stream would make the resume a different experiment."""
+    with pytest.raises(RngRestoreError):
+        restore_rng_state({"torch": "not a tensor", "python": None, "numpy": None})
+
+
+def test_authoritative_resume_refuses_missing_rng_state():
+    with pytest.raises(RngRestoreError, match="no RNG state"):
+        restore_rng_state(None)
+
+
+def test_authoritative_resume_refuses_partial_rng_state():
+    state = capture_rng_state()
+    del state["numpy"]
+    with pytest.raises(RngRestoreError, match="missing RNG state"):
+        restore_rng_state(state)
+
+
+def test_permissive_mode_is_available_for_debugging_only():
+    assert restore_rng_state(None, strict=False) is False
+    assert restore_rng_state({"torch": "not a tensor"}, strict=False) is False
+
+
+def test_strict_load_refuses_checkpoint_without_optimizer_state(tmp_path):
+    model = tiny_codec()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    path = tmp_path / "checkpoint_latest.pt"
+    save_checkpoint(path, model, optimizer, step=10, config=CONFIG, run_id="run-A")
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    payload["optimizer"] = None
+    torch.save(payload, path)
+
+    with pytest.raises(RngRestoreError, match="optimizer"):
+        load_checkpoint(path, tiny_codec(), torch.optim.AdamW(tiny_codec().parameters(), lr=1e-3))

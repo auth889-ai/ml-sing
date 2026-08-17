@@ -283,11 +283,30 @@ def validate_acceptance(output_dir: Path) -> dict[str, Any]:
         "rvq_run_ids": history_ids,
         "run_manifest": read_run_manifest(output_dir),
     }
+    # Every resume of an authoritative run must have restored the full training
+    # state. A resume that silently restarted the RNG stream is a different
+    # experiment wearing the same run_id.
+    resumes = (isolation["run_manifest"] or {}).get("resumes", [])
+    bad_resumes = [
+        event for event in resumes if not (event.get("rng_restored") and event.get("authoritative"))
+    ]
+    isolation["resumes"] = len(resumes)
+    isolation["resume_events"] = resumes
+    isolation["non_authoritative_resumes"] = len(bad_resumes)
+    isolation["rng_restored_on_every_resume"] = not bad_resumes
+
+    # Steps must be contiguous: a gap means a session's rows were lost, not merely
+    # duplicated.
+    expected = set(range(int(min(curve_steps)), int(max(curve_steps)) + 1)) if curve_steps else set()
+    isolation["curve_gaps"] = len(expected - {int(step) for step in curve_steps})
+
     isolation["ok"] = bool(
         len(curve_ids) <= 1
         and len(history_ids) <= 1
         and isolation["curve_duplicate_steps"] == 0
         and isolation["rvq_duplicate_steps"] == 0
+        and isolation["curve_gaps"] == 0
+        and not bad_resumes
     )
     if not isolation["ok"]:
         isolation["reason"] = (
@@ -519,6 +538,11 @@ def write_experiment_log(path: Path, report: dict[str, Any]) -> None:
             ),
             f"- Duplicate curve steps: `{acceptance.get('isolation', {}).get('curve_duplicate_steps')}`",
             f"- Duplicate RVQ steps: `{acceptance.get('isolation', {}).get('rvq_duplicate_steps')}`",
+            f"- Curve gaps: `{acceptance.get('isolation', {}).get('curve_gaps')}`",
+            (
+                f"- Resumes: `{acceptance.get('isolation', {}).get('resumes')}` "
+                f"(all authoritative: `{acceptance.get('isolation', {}).get('rng_restored_on_every_resume')}`)"
+            ),
             f"- Single-run artifacts: `{acceptance.get('isolation', {}).get('ok')}`",
             "",
             "### RVQ Behavior Throughout Training",
@@ -807,6 +831,9 @@ def main() -> None:
             "rvq_recovered": acceptance["rvq_history"].get("recovered"),
             "used_m02_manifest": acceptance["used_m02_manifest"],
             "isolation_ok": acceptance["isolation"]["ok"],
+            "curve_gaps": acceptance["isolation"]["curve_gaps"],
+            "resumes": acceptance["isolation"]["resumes"],
+            "rng_restored_on_every_resume": acceptance["isolation"]["rng_restored_on_every_resume"],
             "curve_rows": acceptance["isolation"]["curve_rows"],
             "curve_run_ids": acceptance["isolation"]["curve_run_ids"],
             "validation_improved": acceptance["validation_improved"],

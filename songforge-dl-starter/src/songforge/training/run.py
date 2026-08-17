@@ -83,11 +83,22 @@ def write_run_manifest(
     """Record who owns this directory."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Carry the original identity and the full resume history forward, so a run
+    # that spans several Colab sessions can be audited as one experiment.
+    previous = read_run_manifest(output_dir) or {}
+    resumes = list(previous.get("resumes", []))
+    resume_event = extra.pop("resume_event", None)
+    if resume_event:
+        resumes.append(resume_event)
+
     manifest = {
         "run_id": run_id,
         "run_label": run_label,
         "config_fingerprint": config_fingerprint(config),
-        "created_at": int(time.time()),
+        "created_at": previous.get("created_at", int(time.time())),
+        "updated_at": int(time.time()),
+        "resumes": resumes,
         **extra,
     }
     (output_dir / RUN_MANIFEST_NAME).write_text(

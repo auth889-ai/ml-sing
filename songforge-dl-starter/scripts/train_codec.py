@@ -24,7 +24,11 @@ from songforge.evaluation.audio import (
 )
 from songforge.losses.audio import codec_reconstruction_loss
 from songforge.models.codec import NeuralCodec
-from songforge.training.checkpoint import load_checkpoint, save_checkpoint
+from songforge.training.checkpoint import (
+    RngRestoreError,
+    load_checkpoint,
+    save_checkpoint,
+)
 from songforge.training.run import (
     assert_fresh_run_dir,
     assert_resume_compatible,
@@ -293,11 +297,20 @@ def train(args: argparse.Namespace) -> None:
     rng_restored = False
     superseded_rows = 0
     if args.resume:
-        checkpoint = load_checkpoint(args.resume, model, optimizer, map_location=device, scaler=scaler)
+        # Strict by default: an acceptance resume that silently restarts the RNG
+        # stream, or drops optimizer/scaler state, is no longer the same
+        # experiment. --allow-rng-fallback exists only for debugging and marks
+        # the run non-authoritative.
+        strict_rng = not args.allow_rng_fallback
+        checkpoint = load_checkpoint(
+            args.resume, model, optimizer, map_location=device, scaler=scaler, strict_rng=strict_rng
+        )
         resumed_run_id = assert_resume_compatible(checkpoint, config)
         if resumed_run_id:
             run_id = resumed_run_id
         rng_restored = bool(checkpoint.get("rng_restored"))
+        if strict_rng and not rng_restored:
+            raise RngRestoreError("authoritative resume requires a restored RNG stream")
         start_step = int(checkpoint.get("step", 0)) + 1
         # A checkpoint saved at step N while training ran on to N+k leaves replayed
         # rows behind. Retire them (kept as .superseded evidence) so steps appear
@@ -310,6 +323,16 @@ def train(args: argparse.Namespace) -> None:
             f"(rng_restored={rng_restored}, superseded rows retired={superseded_rows})"
         )
 
+    resume_event = None
+    if args.resume:
+        resume_event = {
+            "resumed_from": str(args.resume),
+            "resumed_at_step": start_step,
+            "rng_restored": rng_restored,
+            "strict_rng": not args.allow_rng_fallback,
+            "superseded_rows_retired": superseded_rows,
+            "authoritative": not args.allow_rng_fallback,
+        }
     write_run_manifest(
         output_dir,
         run_id=run_id,
@@ -320,6 +343,7 @@ def train(args: argparse.Namespace) -> None:
         start_step=start_step,
         device=str(device),
         amp=amp,
+        resume_event=resume_event,
     )
     print(f"run_id: {run_id}" + (f" (resumed from {resumed_run_id})" if resumed_run_id else ""))
 
@@ -597,6 +621,11 @@ def main() -> None:
         type=int,
         default=64,
         help="Held-out segments evaluated before and after training for like-for-like evidence.",
+    )
+    parser.add_argument(
+        "--allow-rng-fallback",
+        action="store_true",
+        help="Debug only: continue a resume with a fresh RNG stream. Marks the run non-authoritative.",
     )
     parser.add_argument(
         "--checkpoint-every",

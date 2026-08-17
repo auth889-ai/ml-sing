@@ -31,14 +31,35 @@ def _cpu_byte_tensor(value: Any) -> torch.Tensor:
     return torch.as_tensor(value, dtype=torch.uint8).cpu().contiguous()
 
 
-def restore_rng_state(state: dict[str, Any] | None) -> bool:
-    """Restore RNG streams captured by `capture_rng_state`. Returns True when applied.
+class RngRestoreError(RuntimeError):
+    """Raised when a required RNG stream cannot be restored on an authoritative resume."""
 
-    Never raises: an unresumable run is far worse than a resumed run whose RNG
-    stream restarts, so a failure here is reported and training continues.
+
+def restore_rng_state(state: dict[str, Any] | None, strict: bool = True) -> bool:
+    """Restore RNG streams captured by `capture_rng_state`.
+
+    Strict by default. An acceptance run that silently continues on a fresh RNG
+    stream is no longer the same experiment, so every required stream - python,
+    numpy, torch CPU, and CUDA whenever the checkpoint carries it and a GPU is
+    present - must come back or the resume fails loudly.
+
+    `strict=False` exists only for debugging and non-authoritative runs.
     """
     if not state:
+        if strict:
+            raise RngRestoreError(
+                "checkpoint carries no RNG state; an authoritative resume cannot continue "
+                "the same experiment without it"
+            )
         return False
+
+    required = ["python", "numpy", "torch"]
+    if torch.cuda.is_available() and state.get("torch_cuda"):
+        required.append("torch_cuda")
+    missing = [name for name in required if name not in state or state[name] is None]
+    if missing and strict:
+        raise RngRestoreError(f"checkpoint is missing RNG state for: {', '.join(missing)}")
+
     try:
         if "python" in state:
             random.setstate(state["python"])
@@ -46,17 +67,14 @@ def restore_rng_state(state: dict[str, Any] | None) -> bool:
             np.random.set_state(state["numpy"])
         if "torch" in state:
             torch.set_rng_state(_cpu_byte_tensor(state["torch"]))
+        cuda_state = state.get("torch_cuda")
+        if cuda_state and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all([_cpu_byte_tensor(s) for s in cuda_state])
     except (RuntimeError, TypeError, ValueError) as exc:
+        if strict:
+            raise RngRestoreError(f"could not restore RNG state: {exc}") from exc
         print(f"warning: could not restore RNG state ({exc}); continuing with a fresh stream")
         return False
-
-    cuda_state = state.get("torch_cuda")
-    if cuda_state and torch.cuda.is_available():
-        try:
-            torch.cuda.set_rng_state_all([_cpu_byte_tensor(s) for s in cuda_state])
-        except (RuntimeError, TypeError, ValueError):
-            # Different GPU count than the run that saved it; the rest still applies.
-            pass
     return True
 
 
@@ -110,13 +128,34 @@ def load_checkpoint(
     map_location: str | torch.device = "cpu",
     scaler: Any | None = None,
     restore_rng: bool = True,
+    strict_rng: bool = True,
 ) -> dict[str, Any]:
-    """Load weights, optimizer, AMP scaler and RNG streams."""
+    """Load weights, optimizer, AMP scaler and RNG streams.
+
+    On an authoritative resume every piece of state is required: missing
+    optimizer or AMP scaler state would silently change the experiment just as
+    surely as a reset RNG stream.
+    """
     checkpoint = torch.load(path, map_location=map_location, weights_only=False)
     model.load_state_dict(checkpoint["model"])
-    if optimizer is not None and "optimizer" in checkpoint:
-        optimizer.load_state_dict(checkpoint["optimizer"])
-    if scaler is not None and checkpoint.get("scaler"):
+
+    if optimizer is not None:
+        if "optimizer" not in checkpoint or checkpoint["optimizer"] is None:
+            if strict_rng:
+                raise RngRestoreError("checkpoint carries no optimizer state; cannot resume authoritatively")
+        else:
+            optimizer.load_state_dict(checkpoint["optimizer"])
+
+    if scaler is not None and getattr(scaler, "is_enabled", lambda: False)():
+        if not checkpoint.get("scaler"):
+            if strict_rng:
+                raise RngRestoreError("checkpoint carries no AMP scaler state; cannot resume authoritatively")
+        else:
+            scaler.load_state_dict(checkpoint["scaler"])
+    elif scaler is not None and checkpoint.get("scaler"):
         scaler.load_state_dict(checkpoint["scaler"])
-    checkpoint["rng_restored"] = restore_rng_state(checkpoint.get("rng_state")) if restore_rng else False
+
+    checkpoint["rng_restored"] = (
+        restore_rng_state(checkpoint.get("rng_state"), strict=strict_rng) if restore_rng else False
+    )
     return checkpoint
