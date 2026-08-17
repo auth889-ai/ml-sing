@@ -215,3 +215,20 @@ def test_a_second_independent_run_is_still_rejected(tmp_path):
     write_curve(curve, "run-B", range(500, 1000))
     with pytest.raises(RunIsolationError, match="different runs"):
         assert_single_run(read_curve(curve), "curve")
+
+
+def test_rng_restore_accepts_a_non_cpu_style_state():
+    """Regression: torch.load(map_location="cuda") hands back a GPU RNG tensor.
+
+    `set_rng_state` requires a CPU uint8 tensor, so a GPU resume raised
+    "RNG state must be a torch.ByteTensor" and killed the run mid-resume.
+    """
+    state = capture_rng_state()
+    state["torch"] = state["torch"].to(torch.int32)  # wrong dtype, as if round-tripped
+    assert restore_rng_state(state) is True
+
+
+def test_rng_restore_never_raises_on_garbage():
+    """An unresumable run is worse than a restarted RNG stream."""
+    assert restore_rng_state({"torch": "not a tensor"}) is False
+    assert restore_rng_state(None) is False

@@ -21,22 +21,41 @@ def capture_rng_state() -> dict[str, Any]:
     return state
 
 
+def _cpu_byte_tensor(value: Any) -> torch.Tensor:
+    """RNG states must be CPU uint8 tensors.
+
+    `torch.load(map_location="cuda")` moves every saved tensor to the GPU,
+    including the RNG state, and `set_rng_state` then rejects it. Forcing it back
+    to CPU is what lets a GPU resume restore the stream.
+    """
+    return torch.as_tensor(value, dtype=torch.uint8).cpu().contiguous()
+
+
 def restore_rng_state(state: dict[str, Any] | None) -> bool:
-    """Restore RNG streams captured by `capture_rng_state`. Returns True when applied."""
+    """Restore RNG streams captured by `capture_rng_state`. Returns True when applied.
+
+    Never raises: an unresumable run is far worse than a resumed run whose RNG
+    stream restarts, so a failure here is reported and training continues.
+    """
     if not state:
         return False
-    if "python" in state:
-        random.setstate(state["python"])
-    if "numpy" in state:
-        np.random.set_state(state["numpy"])
-    if "torch" in state:
-        torch.set_rng_state(torch.as_tensor(state["torch"], dtype=torch.uint8))
+    try:
+        if "python" in state:
+            random.setstate(state["python"])
+        if "numpy" in state:
+            np.random.set_state(state["numpy"])
+        if "torch" in state:
+            torch.set_rng_state(_cpu_byte_tensor(state["torch"]))
+    except (RuntimeError, TypeError, ValueError) as exc:
+        print(f"warning: could not restore RNG state ({exc}); continuing with a fresh stream")
+        return False
+
     cuda_state = state.get("torch_cuda")
     if cuda_state and torch.cuda.is_available():
         try:
-            torch.cuda.set_rng_state_all([torch.as_tensor(s, dtype=torch.uint8) for s in cuda_state])
-        except (RuntimeError, ValueError):
-            # Different GPU count than the run that saved it; the rest of the state still applies.
+            torch.cuda.set_rng_state_all([_cpu_byte_tensor(s) for s in cuda_state])
+        except (RuntimeError, TypeError, ValueError):
+            # Different GPU count than the run that saved it; the rest still applies.
             pass
     return True
 
