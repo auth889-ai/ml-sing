@@ -39,8 +39,8 @@ python scripts/smoke_train_planner.py
 | M00 — Repository & Project Bootstrap | PASS |
 | M01 — Dataset Registry, Licensing & Provenance | PASS |
 | M02 — Audio Preprocessing & Dataset Pipeline | PASS (real BabySlakh, Colab) |
-| M03 — Neural Audio Codec & Discrete Audio Representation | acceptance in progress on Colab |
-| M04 — High-Quality Codec Optimization & Latent-Rate Selection | not started |
+| M03 — Neural Audio Codec & Discrete Audio Representation | **PASS** (frozen: `docs/M03_RESULT_FROZEN.md`) |
+| M04 — High-Quality Codec Optimization & Latent-Rate Selection | in progress |
 | M05 — Musical Representation & Tokenization | not started |
 | M06 — Song Planning & Semantic Music Generation | not started |
 | M07 — Lyrics, Phoneme & Vocal Alignment Pipeline | not started |
