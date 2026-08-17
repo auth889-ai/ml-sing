@@ -90,7 +90,8 @@ uvicorn deploy.backend.app:app --host 0.0.0.0 --port 8000
 GPU host options, cheapest first: a Colab session with a tunnel (fine for a
 demo, dies with the runtime), a rented L4/A10 (Runpod, Lambda, Vast), or any box
 with ≥16 GB VRAM and bf16 — **Turing/T4 will not work**, since lyrics-to-song
-produces NaN latents there.
+produces NaN latents there. Concrete host recipes, the Dockerfile, and the
+production checklist live in [`deployment/`](deployment/README.md).
 
 ## Frontend
 

@@ -1,6 +1,12 @@
 # Dataset Plan
 
-M01 keeps dataset access explicit, license-aware, and reproducible. The canonical machine-readable registry is `configs/data/datasets.yaml`; this document explains how to use it.
+M01 — Dataset Registry, Licensing & Provenance keeps dataset access explicit, license-aware, and reproducible. The canonical machine-readable registry is `configs/data/datasets.yaml`; this document explains how to use it.
+
+Fine-tuning-era additions (2026-08-18): the balanced Slakh subset is designed in
+[SLAKH100_DESIGN.md](SLAKH100_DESIGN.md) / `configs/datasets/slakh100.yaml`, and the
+verified deployable-vs-research-only shortlist of vocal and real-instrument corpora is
+in [DATA_LICENSING_SHORTLIST.md](DATA_LICENSING_SHORTLIST.md). New corpora are added to
+the M01 registry only when their download is actually approved.
 
 ## Registered Datasets
 

@@ -1,10 +1,17 @@
 # CASE B — vocal realism / emotion scored weak
-# BLOCKED until a permissive vocal corpus is identified. Most singing corpora
-# are CC-BY-NC, which would move this adapter to the research-only line.
+# UNBLOCKED 2026-08-18: permissive vocal corpora identified — see
+# docs/DATA_LICENSING_SHORTLIST.md. Known limitation: this stack is timbre-rich
+# but lyric-poor (VocalSet has no lyrics; vocadito is tiny). If listening says
+# the weakness is *articulated lyrics* rather than tone, the FMA/ccMixter
+# CC-BY vocal-track route with in-project transcription is the escalation.
 goal: vocal realism, phrasing and emotional delivery
 targets_weakness: [vocal_realism, phrasing, emotion, pitch_stability]
-dataset: TBD                 # research track 2 in flight
-licence_class: TBD           # decides deployable vs research-only line
+dataset: vocalset            # CC-BY-4.0, 10.1 h, 20 singers, 17 techniques
+dataset_augment:             # optional choral texture, both CC-BY-4.0
+  - dagstuhl_choirset
+  - csd_upf_choral
+eval_dataset: vocadito       # CC-BY-4.0, 7 languages, sung lyrics + f0 — held-out eval only
+licence_class: permissive    # -> deployable adapter line
 base_checkpoint: ACE-Step/acestep-v15-xl-turbo-diffusers
 size_class: XL
 adapter: lokr

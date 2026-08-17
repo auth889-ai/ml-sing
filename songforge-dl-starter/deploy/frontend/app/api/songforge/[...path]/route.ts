@@ -1,5 +1,4 @@
 // Next.js route handler: proxies /api/songforge/* to the GPU backend.
-// Place at app/api/songforge/[...path]/route.ts in a real Next.js tree.
 
 const BACKEND = process.env.SONGFORGE_API_URL ?? "http://localhost:8000";
 

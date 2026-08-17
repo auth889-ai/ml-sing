@@ -1,0 +1,54 @@
+# Slakh-100: the first balanced 100-song Slakh subset, sized before download.
+# Full sizing evidence and fallbacks: docs/SLAKH100_DESIGN.md
+dataset_id: slakh100
+variant: slakh2100_redux_16k_subset
+source_url: https://zenodo.org/records/7708270          # 16 kHz FLAC resample of redux, CC-BY-4.0
+source_archive: slakh2100_redux_16k.tar.gz              # 48.7 GB, MD5 66a2301ed7b4d5f4f6d3383474e546c6
+source_fallback_url: https://zenodo.org/records/4599666 # 44.1 kHz redux, 104.3 GB, streamed extraction only
+licence: CC-BY-4.0
+download_gb: 48.7          # one-time; only ~3 GB of it is kept
+kept_raw_gb: 3
+decoded_wav_gb: 9
+processed_gb: 7            # ACE-Step layout, scaled from the BabySlakh build (20 tracks -> 9.75 h)
+peak_drive_gb: 15
+peak_colab_local_gb: 55
+tracks: 100
+split_strategy: official_redux_splits   # train picks only from redux train/, etc. Never from omitted/.
+splits: {train: 80, val: 10, test: 10}
+estimated_mixture_hours: 6.9
+estimated_stem_hours: 72   # ~10.5 stems/track, full length, silences included
+estimated_processed_hours: 49
+estimated_segments: 88000
+
+instrument_stratification:
+  # Piano, Guitar, Bass, Drums are in 100% of Slakh mixtures by construction.
+  # Rare families get minimum quotas via greedy weighted max-coverage over
+  # metadata.yaml inst_class, weights = inverse family prevalence.
+  method: greedy_weighted_max_coverage
+  eligibility:
+    duration_minutes: [3, 6]
+    min_stems: 6
+    all_stems_rendered: true            # audio_rendered: true on every stem
+    target_family_min_lufs: -30         # a quota stem must be audible, not buried
+  train_quotas:
+    Strings: 40            # covers both 'Strings' and 'Strings (continued)'
+    Synth Pad: 25
+    Brass: 25
+    Reed: 25
+    Pipe: 20
+    Organ: 20
+    Synth Lead: 15
+    Chromatic Percussion: 15
+  val_test_quotas_each:
+    Strings: 4
+    other_rare_families: 2
+
+goal: >
+  Balanced instrument coverage for the Case A / Case D LoRA lines at 5x the
+  BabySlakh corpus, inside a ~15 GB Drive budget. Slakh is synthesized from
+  sampled instruments; it can teach spectral balance and arrangement but may
+  not teach real-recorded timbre — that caveat is carried into the ablation.
+
+verify_before_download:
+  - "tar -tzf slakh2100_redux_16k.tar.gz | head  # confirm stems/ + metadata.yaml are present (inferred from size, not yet listed)"
+  - "md5sum matches 66a2301ed7b4d5f4f6d3383474e546c6"
