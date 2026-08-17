@@ -17,7 +17,8 @@ licence and its weights licence **separately** — see
 
 | component | source | code licence | weights licence | role |
 | --- | --- | --- | --- | --- |
-| _pending foundation selection_ | | | | |
+| ACE-Step 1.5 XL-turbo | `ACE-Step/acestep-v15-xl-turbo-diffusers` | MIT | MIT | product foundation (provisional) |
+| Whisper-small | `openai/whisper-small` | MIT | MIT | evaluation only — lyric intelligibility scoring, never in the generation path |
 
 ---
 

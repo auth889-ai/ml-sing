@@ -63,7 +63,7 @@ class AceStepAdapter(FoundationAdapter):
     @property
     def capabilities(self) -> Capabilities:
         return Capabilities(
-            model="acestep-1.5",
+            model="ace_step_15",
             version=self.checkpoint_key,
             controls={
                 # typed arguments of AceStepPipeline.__call__
