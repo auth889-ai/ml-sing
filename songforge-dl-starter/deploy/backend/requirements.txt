@@ -1,0 +1,5 @@
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+# generation stack (already present on the GPU host)
+# torch, diffusers>=0.39, transformers, soundfile, numpy

@@ -1,0 +1,21 @@
+# CASE C — lyrics dropping / structure weak
+# NOT A TRAINING RUN. Prompt-side experiments first: buying GPU hours for a
+# problem a prompt change fixes would be the worst use of the remaining budget.
+goal: lyric completeness and long-form structure
+targets_weakness: [coherence, lyric_intelligibility]
+approach: control_experiments_before_training
+experiments:
+  - id: syllable_density
+    vary: lines of 6-10 syllables vs the current longer lines
+    measure: whisper lyric recall
+  - id: duration_padding
+    vary: [60, 90, 120]        # more room per line
+    measure: whisper lyric recall, dropped sections
+  - id: section_spacing
+    vary: blank lines between [verse]/[chorus] tags
+    measure: sections present and in order
+  - id: long_form
+    vary: [120, 180, 240]
+    measure: repetition_score, section_novelty, coherence
+cost: near zero -- RTF 0.05 makes each sweep seconds of GPU
+escalate_to_training_only_if: prompt-side changes fail to close the gap

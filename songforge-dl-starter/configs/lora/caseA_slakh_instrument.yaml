@@ -1,0 +1,26 @@
+# CASE A — instrument realism / arrangement scored weak
+# Ready to run the moment listening scores select it.
+goal: instrument realism and multi-instrument arrangement
+targets_weakness: [realism, instrument_presence, arrangement]
+dataset: slakh100            # balanced 100-song subset, see configs/datasets/
+licence_class: permissive    # CC-BY-4.0 -> deployable adapter line
+base_checkpoint: ACE-Step/acestep-v15-xl-turbo-diffusers
+size_class: XL               # XL and 2B adapters are NOT interchangeable
+adapter: lokr                # ~10x faster than lora; the right default under time pressure
+rank: 64
+alpha: 128
+lr: 0.03
+epochs: 500
+batch_size: 1
+grad_accum: 4
+save_every_n_epochs: 5
+gradient_checkpointing: true
+resume: true                 # Colab drops; --resume-from is mandatory
+caption_source: corpus_instrument_metadata_only
+ablation:
+  control: foundation_benchmarks/ace_step_15_baseline_frozen
+  prompts: benchmarks/prompts.yaml
+  seed: 20260818
+  held_constant: [prompts, lyrics, seed, duration, dtype, steps, shift, gpu]
+  accept_if: instrument dimensions improve with no unacceptable vocal regression
+  watch_for: vocal degradation from an instrument-only corpus

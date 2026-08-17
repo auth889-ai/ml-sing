@@ -1,0 +1,23 @@
+# CASE B — vocal realism / emotion scored weak
+# BLOCKED until a permissive vocal corpus is identified. Most singing corpora
+# are CC-BY-NC, which would move this adapter to the research-only line.
+goal: vocal realism, phrasing and emotional delivery
+targets_weakness: [vocal_realism, phrasing, emotion, pitch_stability]
+dataset: TBD                 # research track 2 in flight
+licence_class: TBD           # decides deployable vs research-only line
+base_checkpoint: ACE-Step/acestep-v15-xl-turbo-diffusers
+size_class: XL
+adapter: lokr
+rank: 64
+alpha: 128
+lr: 0.03
+epochs: 500
+requires:
+  - singer_ids                # singer-disjoint splits are mandatory here
+  - lyrics_or_transcripts
+  - language_labels
+ablation:
+  control: foundation_benchmarks/ace_step_15_baseline_frozen
+  focus_tracks: [vocal, rich_mix]
+  extra_metric: whisper lyric recall must not fall below the 95.7% / 95.2% baseline
+  accept_if: vocal dimensions improve and lyric recall holds

@@ -1,0 +1,24 @@
+# CASE D — piano/violin muffled (already measured: 1406 Hz and 5484 Hz rolloff)
+# The narrowest, highest-confidence intervention: the objective flag already
+# exists, so this case has evidence behind it before listening even starts.
+goal: sparse acoustic instrument fidelity and high-frequency reach
+targets_weakness: [realism, artifacts]
+dataset: slakh100_sparse     # Piano + Strings + Strings (continued) stems only
+licence_class: permissive
+base_checkpoint: ACE-Step/acestep-v15-xl-turbo-diffusers
+size_class: XL
+adapter: lokr
+rank: 32                     # smaller: a narrow target needs less capacity
+alpha: 64
+lr: 0.03
+epochs: 400
+caption_source: corpus_instrument_metadata_only   # "solo Acoustic Grand Piano"
+ablation:
+  control: foundation_benchmarks/ace_step_15_baseline_frozen
+  focus_tracks: [piano, violin, cinematic]
+  objective_metric: spectral_rolloff95_hz must rise on piano and violin
+  accept_if: rolloff rises AND listeners report less muffling AND dense tracks do not regress
+  caveat: >
+    Slakh is synthesized from sampled instruments, not recorded. It may teach
+    spectral balance without teaching real-instrument timbre. If rolloff improves
+    but realism does not, that is the finding, and real recorded data is needed.
