@@ -97,12 +97,18 @@ s04_preprocess() {
 }
 
 s05_gates() {
-  python scripts/dataset_gate.py \
-      --manifest "$DRIVE_ROOT/processed/slakh100_44k_lora/manifests" \
-      --goal instrument-realism --min-seconds 10 \
-      --output "$V1/dataset_gates.json"
-  python scripts/m04_dataset_report.py \
-      --manifests "$DRIVE_ROOT/processed/slakh100_44k_lora/manifests" || true
+  # One gate run per manifest file (the gate script reads files, not dirs),
+  # and any failure fails the stage — no trailing command may mask it.
+  local failed=0
+  for m in "$DRIVE_ROOT"/processed/slakh100_44k_lora/manifests/*.jsonl; do
+    echo "=== gates: $(basename "$m")"
+    if ! python scripts/dataset_gate.py \
+        --manifest "$m" --goal instrument-realism --min-seconds 10 \
+        --output "$V1/gates_$(basename "$m" .jsonl).json"; then
+      failed=1
+    fi
+  done
+  [ "$failed" -eq 0 ]
 }
 
 s06_convert() {
