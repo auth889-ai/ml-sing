@@ -58,9 +58,10 @@ t1_install() {
 t2_weights() {
   cd "$ACE"
   # VAE + text encoder from the main bundle, plus the XL-turbo DiT. Local disk;
-  # cheap to re-fetch relative to a Drive round-trip.
-  acestep-download --dir /content/checkpoints
-  acestep-download --model acestep-v15-xl-turbo --dir /content/checkpoints
+  # cheap to re-fetch relative to a Drive round-trip. The console script is not
+  # always on PATH after an editable install, so invoke the module directly.
+  python -m acestep.model_downloader --dir /content/checkpoints
+  python -m acestep.model_downloader --model acestep-v15-xl-turbo --dir /content/checkpoints
   du -sh /content/checkpoints
 }
 
