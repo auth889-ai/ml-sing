@@ -106,12 +106,15 @@ s05_gates() {
 }
 
 s06_convert() {
-  python scripts/build_acestep_lora_dataset.py \
+  # The upstream trainer consumes the dataset JSON's audio_path list directly
+  # (verified: with --dataset-json the audio dir is never scanned), so no
+  # audio copies are made — the JSON points at the processed train split.
+  mkdir -p "$DRIVE_ROOT/acestep_lora/slakh100"
+  python scripts/build_acestep_training_json.py \
       --manifest "$DRIVE_ROOT/processed/slakh100_44k_lora/manifests" \
-      --output-dir "$DRIVE_ROOT/acestep_lora/slakh100" \
-      --goal "broad instrument realism (Case A / V1)" \
-      --mode segments --copy-audio
-  du -sh "$DRIVE_ROOT/acestep_lora/slakh100"
+      --audio-root "$DRIVE_ROOT/processed/slakh100_44k_lora" \
+      --output "$DRIVE_ROOT/acestep_lora/slakh100/dataset.json" \
+      --split train
 }
 
 s07_train() {
