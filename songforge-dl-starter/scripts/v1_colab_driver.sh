@@ -42,10 +42,20 @@ s00_env() {
 
 s01_download() {
   # Resumable; rerun continues a partial file. ~104.3 GB to LOCAL disk only.
-  wget -c -q --show-progress --progress=dot:giga -O "$ARCHIVE" "$ARCHIVE_URL"
+  local expected=104322767708
+  local actual
+  actual=$(stat -c%s "$ARCHIVE" 2>/dev/null || echo 0)
+  if [ "$actual" != "$expected" ]; then
+    wget -c -q --show-progress --progress=dot:giga -O "$ARCHIVE" "$ARCHIVE_URL"
+  else
+    echo "archive already complete ($actual bytes)"
+  fi
   ls -l "$ARCHIVE"
-  # Structure check promised by the design doc (first listing of the tarball):
-  tar -tzf "$ARCHIVE" | head -20 | tee "$V1/archive_head.txt"
+  # Structure check promised by the design doc. `head` SIGPIPEs tar under
+  # pipefail, so capture without a pipe.
+  { tar -tzf "$ARCHIVE" 2>/dev/null || true; } | sed -n '1,20p;20q' > "$V1/archive_head.txt"
+  [ -s "$V1/archive_head.txt" ] || { echo "empty archive listing"; return 1; }
+  cat "$V1/archive_head.txt"
 }
 
 s02_select() {
