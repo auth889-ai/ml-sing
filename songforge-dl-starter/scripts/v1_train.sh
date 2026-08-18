@@ -48,10 +48,20 @@ t1_install() {
   # parallel jobs, then cache the result so a runtime recycle never pays twice.
   mkdir -p "$V1/wheels"
   pip install -q "$V1"/wheels/flash_attn*.whl 2>/dev/null && echo "flash-attn from Drive cache" || true
-  export MAX_JOBS=8 TORCH_CUDA_ARCH_LIST="8.9" FLASH_ATTN_CUDA_ARCHS="89"
+  # flash-attn MUST build without pip's build isolation: the isolated env
+  # provisions its own torch and the extension links against the wrong ABI
+  # (observed: undefined symbol _ZNK3c104cuda10CUDAStream5queryEv). Build the
+  # wheel explicitly against the installed torch, then install everything else.
+  export MAX_JOBS=4 TORCH_CUDA_ARCH_LIST="8.9" FLASH_ATTN_CUDA_ARCHS="89"
+  if ! python -c "import flash_attn" 2>/dev/null; then
+    pip install -q -r <(grep -v "^flash-attn" requirements.txt)
+    pip wheel -q flash-attn --no-build-isolation --no-deps --no-cache-dir -w /content/wheels_out
+    pip install -q /content/wheels_out/flash_attn*.whl
+  fi
   pip install -q -r requirements.txt
   pip install -q -e .
-  find /root/.cache/pip -name "flash_attn*.whl" -exec cp -n {} "$V1/wheels/" \; 2>/dev/null || true
+  cp -n /content/wheels_out/flash_attn*.whl "$V1/wheels/" 2>/dev/null || true
+  python -c "import flash_attn; print('flash_attn OK', flash_attn.__version__)"
   python -c "import peft, lycoris; print('training deps ok')"
 }
 
