@@ -1,17 +1,23 @@
 # Slakh-100: the first balanced 100-song Slakh subset, sized before download.
 # Full sizing evidence and fallbacks: docs/SLAKH100_DESIGN.md
+#
+# FIDELITY REVISION (2026-08-18, post-listening): the primary source is the
+# native 44.1 kHz redux archive, NOT the 16 kHz resample. The listening review
+# found a broad realism/fidelity deficit; a realism LoRA trained on 16 kHz
+# audio (8 kHz bandwidth ceiling) would learn the band-limit it exists to fix.
+# The 16 kHz variant remains listed only as a cheap metadata/analysis source.
 dataset_id: slakh100
-variant: slakh2100_redux_16k_subset
-source_url: https://zenodo.org/records/7708270          # 16 kHz FLAC resample of redux, CC-BY-4.0
-source_archive: slakh2100_redux_16k.tar.gz              # 48.7 GB, MD5 66a2301ed7b4d5f4f6d3383474e546c6
-source_fallback_url: https://zenodo.org/records/4599666 # 44.1 kHz redux, 104.3 GB, streamed extraction only
+variant: slakh2100_redux_44k_subset
+source_url: https://zenodo.org/records/4599666          # 44.1 kHz FLAC redux, CC-BY-4.0
+source_archive: slakh2100_flac_redux.tar.gz             # 104.3 GB (verified via HTTP HEAD)
+source_16k_analysis_only: https://zenodo.org/records/7708270  # 48.7 GB; NEVER for realism training
 licence: CC-BY-4.0
-download_gb: 48.7          # one-time; only ~3 GB of it is kept
-kept_raw_gb: 3
-decoded_wav_gb: 9
-processed_gb: 7            # ACE-Step layout, scaled from the BabySlakh build (20 tracks -> 9.75 h)
-peak_drive_gb: 15
-peak_colab_local_gb: 55
+download_gb: 104.3         # one-time transient on Colab local disk; only ~5 GB is kept
+kept_raw_gb: 5
+decoded_wav_gb: 25
+processed_gb: 16           # 60 s segments at 44.1 kHz, silence-dropped (configs/data/preprocess_44k_lora.yaml)
+peak_drive_gb: 22
+peak_colab_local_gb: 130   # 104.3 GB archive + extraction workspace; needs a Colab Pro disk
 tracks: 100
 split_strategy: official_redux_splits   # train picks only from redux train/, etc. Never from omitted/.
 splits: {train: 80, val: 10, test: 10}
@@ -50,5 +56,6 @@ goal: >
   not teach real-recorded timbre — that caveat is carried into the ablation.
 
 verify_before_download:
-  - "tar -tzf slakh2100_redux_16k.tar.gz | head  # confirm stems/ + metadata.yaml are present (inferred from size, not yet listed)"
-  - "md5sum matches 66a2301ed7b4d5f4f6d3383474e546c6"
+  - "Zenodo checksum on the record page must match the downloaded archive"
+  - "tar -tzf | head must show train/TrackXXXXX/{mix.flac,stems/,MIDI/,metadata.yaml}"
+  - "wget -c to Colab local disk (resumable; Zenodo Range support verified) — never stream on a droppable runtime"

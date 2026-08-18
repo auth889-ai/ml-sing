@@ -1,10 +1,10 @@
 id,overall_realism,instrument_realism,vocal_realism,lyrics_intelligibility,prompt_adherence,structure_coherence,spectral_clarity,artifact_freedom,instrument_presence,arrangement,phrasing,pitch_stability,emotion,free_text_notes
 _legend,all scores 1-10 where 10 is BEST,artifact_freedom=10 means FREE of artifacts,N/A means the dimension does not apply to this track,blank means not scored yet — never a zero,first 8 columns required,last 5 columns optional — fill only if something stands out,,,,,,,,
-piano,,,N/A,N/A,,,,,,,N/A,N/A,N/A,
-violin,,,N/A,N/A,,,,,,,N/A,N/A,N/A,
-guitar,,,N/A,N/A,,,,,,,N/A,N/A,N/A,
-rock,,,N/A,N/A,,,,,,,N/A,N/A,N/A,
-edm,,,N/A,N/A,,,,,,,N/A,N/A,N/A,
-cinematic,,,N/A,N/A,,,,,,,N/A,N/A,N/A,
-vocal,,,,,,,,,,,,,,
-rich_mix,,,,,,,,,,,,,,
+piano,3.5,,N/A,N/A,,,,,,,N/A,N/A,N/A,coarse overall impression only (listener range 3-4 recorded as 3.5; 2026-08-18)
+violin,7,,N/A,N/A,,,,,,,N/A,N/A,N/A,coarse overall impression only (one of the two strongest tracks)
+guitar,3.5,,N/A,N/A,,,,,,,N/A,N/A,N/A,coarse overall impression only (listener range 3-4 recorded as 3.5)
+rock,3.5,,N/A,N/A,,,,,,,N/A,N/A,N/A,coarse overall impression only (listener range 3-4 recorded as 3.5)
+edm,3.5,,N/A,N/A,,,,,,,N/A,N/A,N/A,coarse overall impression only (listener range 3-4 recorded as 3.5)
+cinematic,3.5,,N/A,N/A,,,,,,,N/A,N/A,N/A,coarse overall impression only (listener range 3-4 recorded as 3.5)
+vocal,3.5,,,,,,,,,,,,,coarse overall impression only (listener range 3-4 recorded as 3.5)
+rich_mix,7,,,,,,,,,,,,,coarse overall impression only (one of the two strongest tracks)

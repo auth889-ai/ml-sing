@@ -1,0 +1,47 @@
+# ACE-Step LoRA corpus preprocessing — native fidelity, long segments.
+#
+# This is NOT the M02/M03 codec contract (24 kHz, 2 s segments). A realism
+# adapter trained on band-limited audio would learn the band-limit — the exact
+# weakness it exists to fix — so the LoRA corpus keeps Slakh's native 44.1 kHz
+# and cuts 60 s segments, matching the generation length ACE-Step is asked for.
+# Changing these values changes the dataset identity: bump the output directory
+# rather than re-running on top of old artifacts.
+
+preprocess:
+  sample_rate: 44100          # Slakh native; never train realism on 16 kHz sources
+  channels: 1                 # Slakh stems are mono
+  channel_policy: mean
+
+  segment_seconds: 60.0       # generation-length clips, not codec micro-segments
+  hop_seconds: null
+  pad_final_partial: false
+
+  normalize: peak
+  target_dbfs: -1.0
+  max_gain_db: 30.0
+
+  silence_threshold_dbfs: -60.0
+  drop_silent: true           # stem tails are mostly silence; drop them
+
+  clipping_threshold: 0.999
+  max_clipping_ratio: 0.01
+  drop_clipped: false
+
+  min_source_seconds: 10.0
+  max_source_seconds: null
+
+  resample_filter_width: 6
+  resample_rolloff: 0.99
+
+  write_audio: true
+  compute_source_hash: true
+
+# Slakh-100 arrives pre-split by the official redux split directories; the
+# quota assigner only confirms, it never reassigns a song across splits.
+splits:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  seed: 42
+  mode: song
+  strategy: quota

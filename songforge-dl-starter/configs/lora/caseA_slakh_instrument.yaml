@@ -10,17 +10,26 @@ adapter: lokr                # ~10x faster than lora; the right default under ti
 rank: 64
 alpha: 128
 lr: 0.03
-epochs: 500
+max_steps: 8000              # step-based, not epoch-based: ~50 h corpus, batch 1 x ga 4
+val_every_steps: 500
+early_stop: val loss plateau over 3 evals
 batch_size: 1
 grad_accum: 4
-save_every_n_epochs: 5
+save_every_minutes: 30       # atomic checkpoints; Colab drops every 10-40 min
 gradient_checkpointing: true
 resume: true                 # Colab drops; --resume-from is mandatory
+data_sample_rate: 44100      # never train realism on 16 kHz sources
+data_config: configs/data/preprocess_44k_lora.yaml
 caption_source: corpus_instrument_metadata_only
 ablation:
   control: foundation_benchmarks/ace_step_15_baseline_frozen
   prompts: benchmarks/prompts.yaml
   seed: 20260818
   held_constant: [prompts, lyrics, seed, duration, dtype, steps, shift, gpu]
-  accept_if: instrument dimensions improve with no unacceptable vocal regression
-  watch_for: vocal degradation from an instrument-only corpus
+  accept_if: >-
+    mean overall of the six weak tracks (piano, guitar, rock, edm, cinematic,
+    vocal) improves by >= 1.0 on a blind listen AND violin and rich_mix each
+    stay within 0.5 of baseline AND Whisper lyric recall stays within 2 points
+    of 95.7/95.2 AND no new objective flags
+  then: run all 51 generalization prompts; reject if broad capability degrades
+  watch_for: vocal degradation from an instrument-only corpus; strings regression

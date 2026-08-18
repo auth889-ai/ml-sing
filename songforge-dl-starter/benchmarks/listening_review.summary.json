@@ -1,0 +1,162 @@
+{
+  "attribution": {
+    "A": {
+      "bucket": "insufficient evidence",
+      "reason": "only 0 scored cells (need 3)"
+    },
+    "B": {
+      "bucket": "insufficient evidence",
+      "reason": "only 0 scored cells (need 3)"
+    },
+    "C": {
+      "bucket": "insufficient evidence",
+      "reason": "only 0 scored cells (need 3)"
+    },
+    "D": {
+      "bucket": "insufficient evidence",
+      "reason": "only 0 scored cells (need 3)"
+    },
+    "E": {
+      "bucket": "prompt/control-layer problem",
+      "reason": "sweep inference settings first (steps/shift/dtype); if artifacts survive that sweep, they are a pretrained/decoder limitation"
+    }
+  },
+  "expected_cells": 52,
+  "first_intervention": {
+    "intervention": "inference_settings_sweep",
+    "reason": "worst area is E (mean 4.38); artifacts get a settings sweep, not a LoRA \u2014 see attribution",
+    "training_candidate_after": null
+  },
+  "missing": [
+    "piano.instrument_realism",
+    "piano.prompt_adherence",
+    "piano.structure_coherence",
+    "piano.spectral_clarity",
+    "piano.artifact_freedom",
+    "violin.instrument_realism",
+    "violin.prompt_adherence",
+    "violin.structure_coherence",
+    "violin.spectral_clarity",
+    "violin.artifact_freedom",
+    "guitar.instrument_realism",
+    "guitar.prompt_adherence",
+    "guitar.structure_coherence",
+    "guitar.spectral_clarity",
+    "guitar.artifact_freedom",
+    "rock.instrument_realism",
+    "rock.prompt_adherence",
+    "rock.structure_coherence",
+    "rock.spectral_clarity",
+    "rock.artifact_freedom",
+    "edm.instrument_realism",
+    "edm.prompt_adherence",
+    "edm.structure_coherence",
+    "edm.spectral_clarity",
+    "edm.artifact_freedom",
+    "cinematic.instrument_realism",
+    "cinematic.prompt_adherence",
+    "cinematic.structure_coherence",
+    "cinematic.spectral_clarity",
+    "cinematic.artifact_freedom",
+    "vocal.instrument_realism",
+    "vocal.vocal_realism",
+    "vocal.lyrics_intelligibility",
+    "vocal.prompt_adherence",
+    "vocal.structure_coherence",
+    "vocal.spectral_clarity",
+    "vocal.artifact_freedom",
+    "rich_mix.instrument_realism",
+    "rich_mix.vocal_realism",
+    "rich_mix.lyrics_intelligibility",
+    "rich_mix.prompt_adherence",
+    "rich_mix.structure_coherence",
+    "rich_mix.spectral_clarity",
+    "rich_mix.artifact_freedom"
+  ],
+  "notes": {
+    "cinematic": "coarse overall impression only (listener range 3-4 recorded as 3.5)",
+    "edm": "coarse overall impression only (listener range 3-4 recorded as 3.5)",
+    "guitar": "coarse overall impression only (listener range 3-4 recorded as 3.5)",
+    "piano": "coarse overall impression only (listener range 3-4 recorded as 3.5; 2026-08-18)",
+    "rich_mix": "coarse overall impression only (one of the two strongest tracks)",
+    "rock": "coarse overall impression only (listener range 3-4 recorded as 3.5)",
+    "violin": "coarse overall impression only (one of the two strongest tracks)",
+    "vocal": "coarse overall impression only (listener range 3-4 recorded as 3.5)"
+  },
+  "ranked_dimensions": [
+    {
+      "dimension": "overall_realism",
+      "mean": 4.38,
+      "per_track": {
+        "cinematic": 3.5,
+        "edm": 3.5,
+        "guitar": 3.5,
+        "piano": 3.5,
+        "rich_mix": 7.0,
+        "rock": 3.5,
+        "violin": 7.0,
+        "vocal": 3.5
+      },
+      "tracks_scored": 8,
+      "worst_score": 3.5,
+      "worst_track": "piano"
+    }
+  ],
+  "scored_cells": 8,
+  "weakness_areas": [
+    {
+      "area": "E",
+      "cells_scored": 8,
+      "mean": 4.38,
+      "name": "artifacts / general audio quality",
+      "per_cell": {
+        "cinematic.overall_realism": 3.5,
+        "edm.overall_realism": 3.5,
+        "guitar.overall_realism": 3.5,
+        "piano.overall_realism": 3.5,
+        "rich_mix.overall_realism": 7.0,
+        "rock.overall_realism": 3.5,
+        "violin.overall_realism": 7.0,
+        "vocal.overall_realism": 3.5
+      },
+      "sufficient": true,
+      "worst_cell": "piano.overall_realism"
+    },
+    {
+      "area": "A",
+      "cells_scored": 0,
+      "mean": null,
+      "name": "instrument realism",
+      "per_cell": {},
+      "sufficient": false,
+      "worst_cell": null
+    },
+    {
+      "area": "B",
+      "cells_scored": 0,
+      "mean": null,
+      "name": "vocal realism",
+      "per_cell": {},
+      "sufficient": false,
+      "worst_cell": null
+    },
+    {
+      "area": "C",
+      "cells_scored": 0,
+      "mean": null,
+      "name": "lyrics / structure / prompt controllability",
+      "per_cell": {},
+      "sufficient": false,
+      "worst_cell": null
+    },
+    {
+      "area": "D",
+      "cells_scored": 0,
+      "mean": null,
+      "name": "sparse-acoustic muffling / frequency loss",
+      "per_cell": {},
+      "sufficient": false,
+      "worst_cell": null
+    }
+  ]
+}
