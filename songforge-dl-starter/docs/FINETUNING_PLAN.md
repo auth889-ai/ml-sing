@@ -43,6 +43,14 @@ The baseline directory is frozen and write-protected. It is never regenerated,
 because a control that moves is not a control — the same discipline the M04
 fairness audit enforced.
 
+**The frozen eight are necessary, not sufficient.** They are a regression
+test, never the target. An adapter that passes keep-if-better on them must
+then hold its ground on the Generalization Benchmark
+(`benchmarks/generalization_prompts.yaml`, ~50 prompts, ten categories) —
+including its held-out tier, which is never used for training or prompt
+tuning (CI-enforced). Do not optimize for the eight benchmark songs; a win
+that costs broad free-form capability is rejected.
+
 ## 3. Weakness → intervention map
 
 Selected once the scores land. Readiness matters as much as fit: with a fixed

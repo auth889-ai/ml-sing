@@ -18,4 +18,8 @@ experiments:
     vary: [120, 180, 240]
     measure: repetition_score, section_novelty, coherence
 cost: near zero -- RTF 0.05 makes each sweep seconds of GPU
+prompt_pool: >-
+  frozen eight plus DEV-tier prompts from benchmarks/generalization_prompts.yaml
+  only. Held-out generalization prompts are NEVER used for prompt tuning;
+  tests/test_generalization_benchmark.py fails the build on any reference.
 escalate_to_training_only_if: prompt-side changes fail to close the gap

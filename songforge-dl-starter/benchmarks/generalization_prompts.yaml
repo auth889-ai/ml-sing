@@ -1,0 +1,764 @@
+# SongForge Generalization Benchmark — breadth, not the frozen eight.
+#
+# The eight prompts in prompts.yaml are a frozen REGRESSION benchmark: they
+# detect whether a change broke something. They are not the product and they
+# are not the target. SongForge is a free-form generator; this file measures
+# whether it stays one.
+#
+# Tier policy:
+#   dev      — may be used for prompt engineering and Case C control
+#              experiments. NEVER as training audio.
+#   heldout  — never used for training, prompt tuning, cherry-picking, or any
+#              development decision. Generated and scored only at evaluation
+#              time. The first time the model sees these words is the eval.
+#
+# `expects_instruments` drives the instrument-audibility check and the
+# scorecard. It is an evaluation target, NOT a generation switch: nothing in
+# SongForge branches on these names to synthesise an instrument.
+#
+# Acceptance rule for any adapter: improve the weakness it targeted on the
+# frozen eight, WITHOUT losing broad capability here. A model that aces eight
+# songs and degrades on prompts it has never seen is a regression, not a win.
+
+version: 1
+purpose: generalization
+defaults:
+  seed: 20260818
+  duration_seconds: 60
+  vocal: null
+
+prompts:
+  # ---- 1. solo instruments -------------------------------------------------
+  - id: solo_cello
+    title: Solo cello elegy
+    category: solo
+    heldout: true
+    prompt: >-
+      Solo cello, slow mournful elegy, deep resonant bowing, natural wooden
+      warmth, intimate chamber acoustic, long sustained phrases.
+    genre: [classical, chamber]
+    mood: [mournful, intimate]
+    instruments: [cello]
+    expects_instruments: [cello, strings]
+    bpm: 60
+    key: C minor
+
+  - id: solo_jazz_piano
+    title: Uptempo jazz piano
+    category: solo
+    prompt: >-
+      Solo jazz piano, uptempo swing, playful improvised runs, walking left-hand
+      bass lines, bright and virtuosic, small club atmosphere.
+    genre: [jazz]
+    mood: [playful, energetic]
+    instruments: [piano]
+    expects_instruments: [piano]
+    bpm: 168
+    key: Bb major
+
+  - id: solo_flute
+    title: Solo flute pastoral
+    category: solo
+    prompt: >-
+      Solo concert flute, pastoral and airy, light ornamented melodies, gentle
+      breath tone, calm morning feeling.
+    genre: [classical, pastoral]
+    mood: [calm, airy]
+    instruments: [flute]
+    expects_instruments: [flute, woodwinds]
+    bpm: 84
+    key: G major
+
+  - id: solo_trumpet
+    title: Muted trumpet ballad
+    category: solo
+    prompt: >-
+      Solo muted trumpet ballad, smoky late-night jazz feel, slow expressive
+      phrasing with space between lines, melancholic and warm.
+    genre: [jazz, ballad]
+    mood: [melancholic, smoky]
+    instruments: [muted trumpet]
+    expects_instruments: [trumpet, brass]
+    bpm: 66
+    key: F minor
+
+  - id: solo_clean_guitar
+    title: Clean electric guitar instrumental
+    category: solo
+    prompt: >-
+      Solo clean electric guitar instrumental, shimmering chords with reverb,
+      slow melodic lead lines, spacious and dreamy, no distortion.
+    genre: [ambient rock, instrumental]
+    mood: [dreamy, spacious]
+    instruments: [clean electric guitar]
+    expects_instruments: [electric_guitar]
+    bpm: 78
+    key: E major
+
+  # ---- 2. multi-instrument arrangements ------------------------------------
+  - id: piano_violin_female_vocal
+    title: Piano, violin and female vocal
+    category: arrangement
+    prompt: >-
+      Tender song with grand piano, a single expressive violin countermelody and
+      a soft female lead vocal, sparse and emotional, chamber-pop intimacy.
+    genre: [chamber pop, ballad]
+    mood: [tender, emotional]
+    instruments: [piano, violin]
+    expects_instruments: [piano, violin, vocals]
+    bpm: 72
+    key: A minor
+    vocal: { present: true, gender: female, style: soft, language: en }
+
+  - id: guitar_strings_drums
+    title: Guitar with strings and drums
+    category: arrangement
+    prompt: >-
+      Acoustic guitar-led instrumental with a swelling string section and steady
+      live drums, builds from quiet picking to a full warm arrangement.
+    genre: [folk pop, cinematic folk]
+    mood: [uplifting, warm]
+    instruments: [acoustic guitar, string section, drum kit]
+    expects_instruments: [acoustic_guitar, strings, drums]
+    bpm: 104
+    key: D major
+
+  - id: piano_trio
+    title: Jazz piano trio
+    category: arrangement
+    prompt: >-
+      Classic jazz piano trio — piano, upright bass and brushed drums — mid-tempo
+      swing, conversational interplay, warm club recording.
+    genre: [jazz]
+    mood: [relaxed, sophisticated]
+    instruments: [piano, upright bass, brushed drums]
+    expects_instruments: [piano, bass, drums]
+    bpm: 120
+    key: Eb major
+
+  - id: string_quartet_clarinet
+    title: String quartet with clarinet
+    category: arrangement
+    heldout: true
+    prompt: >-
+      Chamber piece for string quartet joined by a lyrical clarinet, elegant
+      interweaving lines, classical form with a gentle dance feel.
+    genre: [classical, chamber]
+    mood: [elegant, graceful]
+    instruments: [string quartet, clarinet]
+    expects_instruments: [strings, violin, clarinet, woodwinds]
+    bpm: 96
+    key: A major
+
+  - id: synth_bass_drums_funk
+    title: Synth funk trio
+    category: arrangement
+    prompt: >-
+      Tight funk groove with analog synth lead, slap electric bass and crisp
+      drums, syncopated and danceable, retro-modern production.
+    genre: [funk, electro-funk]
+    mood: [groovy, confident]
+    instruments: [analog synth, slap bass, drum kit]
+    expects_instruments: [synth, bass, drums]
+    bpm: 112
+    key: E minor
+
+  - id: harp_and_horn
+    title: Harp and French horn nocturne
+    category: arrangement
+    prompt: >-
+      Nocturne for harp and French horn, rippling arpeggios under a long singing
+      horn melody, still and nocturnal, concert hall depth.
+    genre: [classical, nocturne]
+    mood: [still, nocturnal]
+    instruments: [harp, french horn]
+    expects_instruments: [harp, horn, brass]
+    bpm: 63
+    key: Db major
+
+  # ---- 3. vocals -----------------------------------------------------------
+  - id: acoustic_male_vocal
+    title: Acoustic guitar and male vocal
+    category: vocals
+    prompt: >-
+      Intimate singer-songwriter track, fingerpicked acoustic guitar and a warm
+      male lead vocal, close and honest, small room feel.
+    genre: [singer-songwriter, folk]
+    mood: [honest, intimate]
+    instruments: [acoustic guitar]
+    expects_instruments: [acoustic_guitar, vocals]
+    bpm: 88
+    key: C major
+    vocal: { present: true, gender: male, style: warm, language: en }
+    lyrics: |
+      [Verse]
+      Morning finds the kitchen light still on
+      Two cold cups where the night has gone
+      [Chorus]
+      And I keep the door unlocked for you
+      Like the simple things we used to do
+
+  - id: jazz_female_vocal
+    title: Female jazz vocal with combo
+    category: vocals
+    prompt: >-
+      Late-night jazz standard feel, smoky female vocal over piano, upright bass
+      and brushes, unhurried phrasing, vintage warmth.
+    genre: [vocal jazz]
+    mood: [smoky, romantic]
+    instruments: [piano, upright bass, brushed drums]
+    expects_instruments: [vocals, piano, bass, drums]
+    bpm: 74
+    key: G minor
+    vocal: { present: true, gender: female, style: smoky, language: en }
+
+  - id: rnb_male_vocal
+    title: R&B male vocal
+    category: vocals
+    prompt: >-
+      Modern R&B track with a smooth male vocal, silky harmonies, warm electric
+      piano chords, deep bass and laid-back programmed drums.
+    genre: [rnb, neo-soul]
+    mood: [smooth, sultry]
+    instruments: [electric piano, bass, drum machine]
+    expects_instruments: [vocals, keyboards, bass, drums]
+    bpm: 92
+    key: Ab major
+    vocal: { present: true, gender: male, style: smooth, language: en }
+
+  - id: choir_a_cappella
+    title: A cappella choir
+    category: vocals
+    heldout: true
+    prompt: >-
+      A cappella mixed choir, rich layered harmonies, slow hymn-like phrases,
+      cathedral reverb, no instruments at all.
+    genre: [choral, sacred]
+    mood: [solemn, uplifting]
+    instruments: []
+    expects_instruments: [vocals, choir]
+    bpm: 70
+    key: F major
+    vocal: { present: true, gender: mixed, style: choral, language: en }
+
+  - id: powerful_female_rock_vocal
+    title: Powerful female rock vocal
+    category: vocals
+    prompt: >-
+      Anthemic rock song fronted by a powerful female belt vocal, crunchy
+      guitars, driving rhythm section, huge sing-along chorus.
+    genre: [rock, arena rock]
+    mood: [defiant, anthemic]
+    instruments: [electric guitar, bass, drum kit]
+    expects_instruments: [vocals, electric_guitar, bass, drums]
+    bpm: 128
+    key: D minor
+    vocal: { present: true, gender: female, style: belt, language: en }
+
+  - id: whisper_vocal_ambient
+    title: Whispered vocal over ambient pads
+    category: vocals
+    prompt: >-
+      Ethereal ambient piece with a whispered, breathy female vocal floating over
+      soft synth pads and distant piano, weightless and hazy.
+    genre: [ambient pop, dream pop]
+    mood: [hazy, weightless]
+    instruments: [synth pads, piano]
+    expects_instruments: [vocals, synth, piano]
+    bpm: 68
+    key: B minor
+    vocal: { present: true, gender: female, style: whispered, language: en }
+
+  # ---- 4. full band --------------------------------------------------------
+  - id: funk_band_horns
+    title: Funk band with horn section
+    category: full_band
+    prompt: >-
+      Nine-piece funk band: tight horn section stabs, wah guitar, clavinet,
+      slap bass and in-the-pocket drums, party energy throughout.
+    genre: [funk, soul]
+    mood: [joyful, energetic]
+    instruments: [horn section, electric guitar, clavinet, bass, drum kit]
+    expects_instruments: [brass, trumpet, electric_guitar, keyboards, bass, drums]
+    bpm: 108
+    key: E minor
+
+  - id: heavy_metal
+    title: Heavy metal
+    category: full_band
+    prompt: >-
+      Heavy metal track, down-tuned rhythm guitars, aggressive double-kick
+      drumming, growling bass, fast palm-muted riffs and a screaming lead solo.
+    genre: [metal]
+    mood: [aggressive, dark]
+    instruments: [distorted electric guitar, bass, double-kick drums]
+    expects_instruments: [electric_guitar, bass, drums]
+    bpm: 172
+    key: C minor
+
+  - id: ska_band
+    title: Ska band
+    category: full_band
+    heldout: true
+    prompt: >-
+      Upbeat ska tune with offbeat guitar skanks, bouncing bass, bright trumpet
+      and trombone lines, snappy drums, sunny and irresistible.
+    genre: [ska]
+    mood: [sunny, bouncy]
+    instruments: [electric guitar, bass, trumpet, trombone, drum kit]
+    expects_instruments: [electric_guitar, bass, trumpet, trombone, brass, drums]
+    bpm: 140
+    key: G major
+
+  - id: blues_band
+    title: Slow blues band
+    category: full_band
+    prompt: >-
+      Slow 12/8 blues, expressive electric guitar bends, Hammond organ swells,
+      walking bass and a loose live drum feel, smoky bar atmosphere.
+    genre: [blues]
+    mood: [soulful, weary]
+    instruments: [electric guitar, hammond organ, bass, drum kit]
+    expects_instruments: [electric_guitar, organ, keyboards, bass, drums]
+    bpm: 58
+    key: A major
+
+  - id: indie_band
+    title: Indie rock band
+    category: full_band
+    prompt: >-
+      Jangly indie rock, chiming clean guitars, melodic bass lines, driving
+      eighth-note drums and an airy synth layer, wistful but propulsive.
+    genre: [indie rock]
+    mood: [wistful, propulsive]
+    instruments: [electric guitar, bass, drum kit, synth]
+    expects_instruments: [electric_guitar, bass, drums, synth]
+    bpm: 148
+    key: B major
+
+  # ---- 5. orchestral / cinematic -------------------------------------------
+  - id: cinematic_piano_climax
+    title: Cinematic piano into full-band climax
+    category: cinematic
+    heldout: true
+    prompt: >-
+      Begins as a lone cinematic piano theme, gradually joined by strings, then
+      bass, drums and electric guitar for a massive emotional final climax.
+    genre: [cinematic, post-rock]
+    mood: [emotional, triumphant]
+    instruments: [piano, string section, electric guitar, bass, drum kit]
+    expects_instruments: [piano, strings, electric_guitar, bass, drums]
+    bpm: 90
+    key: C minor
+
+  - id: orchestral_synth_hybrid
+    title: Orchestral and synth hybrid score
+    category: cinematic
+    prompt: >-
+      Hybrid trailer score blending full orchestra with pulsing analog synths and
+      cinematic percussion hits, tense build to a wide heroic theme.
+    genre: [cinematic, hybrid orchestral]
+    mood: [tense, heroic]
+    instruments: [orchestra, analog synth, cinematic percussion]
+    expects_instruments: [strings, brass, synth, percussion]
+    bpm: 100
+    key: D minor
+
+  - id: full_orchestra_waltz
+    title: Orchestral waltz
+    category: cinematic
+    prompt: >-
+      Elegant orchestral waltz in three, lilting strings, woodwind flourishes,
+      warm horns, ballroom grandeur with light percussion.
+    genre: [classical, waltz]
+    mood: [elegant, nostalgic]
+    instruments: [orchestra]
+    expects_instruments: [strings, woodwinds, brass, percussion]
+    bpm: 174
+    key: Eb major
+    time_signature: 3/4
+
+  - id: dark_strings_tension
+    title: Dark string tension cue
+    category: cinematic
+    prompt: >-
+      Dark suspense cue for low strings, dissonant sustained clusters, nervous
+      col legno rhythms, slowly rising dread, sparse deep percussion.
+    genre: [cinematic, suspense]
+    mood: [dread, tense]
+    instruments: [low strings, percussion]
+    expects_instruments: [strings, cello, percussion]
+    bpm: 72
+    key: B minor
+
+  - id: adventure_brass_theme
+    title: Adventure brass theme
+    category: cinematic
+    prompt: >-
+      Sweeping adventure main theme led by heroic brass fanfares over galloping
+      strings and bold timpani, golden-age film score energy.
+    genre: [cinematic, adventure score]
+    mood: [heroic, sweeping]
+    instruments: [brass section, strings, timpani]
+    expects_instruments: [brass, trumpet, horn, strings, percussion]
+    bpm: 126
+    key: Bb major
+
+  # ---- 6. electronic -------------------------------------------------------
+  - id: ambient_drone
+    title: Ambient drone
+    category: electronic
+    prompt: >-
+      Deep ambient soundscape, slowly evolving synth drones and soft granular
+      textures, no drums, vast and meditative.
+    genre: [ambient, drone]
+    mood: [meditative, vast]
+    instruments: [synth pads]
+    expects_instruments: [synth]
+    bpm: 60
+    key: A minor
+
+  - id: synthwave
+    title: Synthwave night drive
+    category: electronic
+    prompt: >-
+      Retro synthwave, arpeggiated analog sequences, gated reverb drums, neon
+      lead melody, steady night-drive momentum.
+    genre: [synthwave, retrowave]
+    mood: [nocturnal, nostalgic]
+    instruments: [analog synth, drum machine, synth bass]
+    expects_instruments: [synth, drums, bass]
+    bpm: 100
+    key: F minor
+
+  - id: drum_and_bass
+    title: Drum and bass
+    category: electronic
+    heldout: true
+    prompt: >-
+      High-energy drum and bass, fast breakbeats, deep rolling sub bass, airy
+      atmospheric pads and sharp stabs, relentless forward motion.
+    genre: [drum and bass]
+    mood: [urgent, euphoric]
+    instruments: [breakbeat drums, sub bass, synth pads]
+    expects_instruments: [drums, bass, synth]
+    bpm: 174
+    key: F# minor
+
+  - id: deep_house
+    title: Deep house
+    category: electronic
+    prompt: >-
+      Warm deep house groove, four-on-the-floor kick, dusty chords, rounded
+      bassline, subtle vocal chops, late-night club warmth.
+    genre: [deep house]
+    mood: [warm, hypnotic]
+    instruments: [drum machine, synth chords, synth bass]
+    expects_instruments: [drums, synth, bass]
+    bpm: 122
+    key: A minor
+
+  - id: downtempo_trip_hop
+    title: Downtempo trip-hop
+    category: electronic
+    prompt: >-
+      Moody trip-hop, dusty slow breakbeat, deep bass, minor-key electric piano,
+      vinyl crackle atmosphere, cinematic and brooding.
+    genre: [trip-hop, downtempo]
+    mood: [brooding, cinematic]
+    instruments: [drum machine, bass, electric piano]
+    expects_instruments: [drums, bass, keyboards]
+    bpm: 82
+    key: D minor
+
+  # ---- 7. acoustic ---------------------------------------------------------
+  - id: bluegrass
+    title: Bluegrass string band
+    category: acoustic
+    prompt: >-
+      Fast bluegrass breakdown with banjo rolls, flatpicked acoustic guitar,
+      fiddle runs, mandolin chops and upright bass, front-porch energy.
+    genre: [bluegrass]
+    mood: [joyful, virtuosic]
+    instruments: [banjo, acoustic guitar, fiddle, mandolin, upright bass]
+    expects_instruments: [banjo, acoustic_guitar, violin, mandolin, bass]
+    bpm: 160
+    key: G major
+
+  - id: classical_guitar
+    title: Classical guitar study
+    category: acoustic
+    prompt: >-
+      Solo nylon-string classical guitar, flowing arpeggiated study, Spanish
+      romantic character, expressive rubato, intimate recording.
+    genre: [classical, spanish guitar]
+    mood: [romantic, contemplative]
+    instruments: [nylon-string guitar]
+    expects_instruments: [acoustic_guitar]
+    bpm: 76
+    key: E minor
+
+  - id: folk_duo
+    title: Folk duo with harmony
+    category: acoustic
+    heldout: true
+    prompt: >-
+      Acoustic folk duo, two interweaving guitars and close male-female harmony
+      singing, warm and rootsy, campfire closeness.
+    genre: [folk]
+    mood: [rootsy, warm]
+    instruments: [acoustic guitars]
+    expects_instruments: [acoustic_guitar, vocals]
+    bpm: 96
+    key: D major
+    vocal: { present: true, gender: mixed, style: harmony, language: en }
+
+  - id: acoustic_pop
+    title: Acoustic pop with light percussion
+    category: acoustic
+    prompt: >-
+      Sunny acoustic pop, strummed guitar, shaker and cajon percussion, melodic
+      glockenspiel accents, bright female vocal, feel-good and light.
+    genre: [acoustic pop]
+    mood: [sunny, light]
+    instruments: [acoustic guitar, cajon, glockenspiel]
+    expects_instruments: [acoustic_guitar, percussion, vocals]
+    bpm: 110
+    key: C major
+    vocal: { present: true, gender: female, style: bright, language: en }
+
+  # ---- 8. genre combinations -----------------------------------------------
+  - id: violin_led_rock
+    title: Violin-led rock
+    category: genre_fusion
+    heldout: true
+    prompt: >-
+      Rock band fronted by a fierce electric violin lead instead of a singer,
+      driving distorted guitars, pounding drums, virtuosic folk-rock energy.
+    genre: [rock, folk rock]
+    mood: [fierce, driving]
+    instruments: [electric violin, electric guitar, bass, drum kit]
+    expects_instruments: [violin, electric_guitar, bass, drums]
+    bpm: 144
+    key: E minor
+
+  - id: jazz_electronic_fusion
+    title: Jazz-electronic fusion
+    category: genre_fusion
+    prompt: >-
+      Nu-jazz fusion: live drums and upright bass grooving under warm Rhodes
+      chords, glitchy electronic textures and a muted trumpet solo.
+    genre: [nu-jazz, electronic]
+    mood: [sleek, exploratory]
+    instruments: [drum kit, upright bass, rhodes, electronics, muted trumpet]
+    expects_instruments: [drums, bass, keyboards, synth, trumpet]
+    bpm: 96
+    key: F minor
+
+  - id: latin_pop_brass
+    title: Latin pop with brass
+    category: genre_fusion
+    prompt: >-
+      High-energy Latin pop, syncopated montuno piano, punchy brass hits, congas
+      and timbales, danceable and celebratory.
+    genre: [latin pop, salsa]
+    mood: [celebratory, fiery]
+    instruments: [piano, brass section, congas, timbales, bass]
+    expects_instruments: [piano, brass, trumpet, percussion, bass]
+    bpm: 98
+    key: A minor
+
+  - id: folktronica
+    title: Folktronica
+    category: genre_fusion
+    prompt: >-
+      Folktronica blend of fingerpicked acoustic guitar and soft banjo over
+      clicky programmed beats and warm synth pads, organic meets electronic.
+    genre: [folktronica, indie electronic]
+    mood: [organic, gentle]
+    instruments: [acoustic guitar, banjo, drum machine, synth pads]
+    expects_instruments: [acoustic_guitar, banjo, drums, synth]
+    bpm: 114
+    key: G major
+
+  - id: orchestral_hiphop
+    title: Orchestral hip-hop
+    category: genre_fusion
+    heldout: true
+    prompt: >-
+      Cinematic hip-hop instrumental, boom-bap drums and deep 808 bass under
+      dramatic string ostinatos, harp runs and brass swells.
+    genre: [hip-hop, orchestral]
+    mood: [dramatic, gritty]
+    instruments: [drum machine, 808 bass, strings, harp, brass]
+    expects_instruments: [drums, bass, strings, harp, brass]
+    bpm: 86
+    key: G minor
+
+  # ---- 9. multilingual lyrics ----------------------------------------------
+  - id: spanish_pop
+    title: Spanish pop song
+    category: multilingual
+    prompt: >-
+      Warm Spanish-language pop song, nylon guitar and modern pop production,
+      heartfelt female vocal, gentle reggaeton-tinged groove.
+    genre: [latin pop]
+    mood: [heartfelt, warm]
+    instruments: [nylon guitar, bass, drum machine]
+    expects_instruments: [vocals, acoustic_guitar, bass, drums]
+    bpm: 95
+    key: A minor
+    vocal: { present: true, gender: female, style: heartfelt, language: es }
+    lyrics: |
+      [Verso]
+      Bajo la luna te vuelvo a esperar
+      Con una canción que no sé terminar
+      [Coro]
+      Quédate, que la noche es para los dos
+      Baila conmigo hasta que salga el sol
+
+  - id: japanese_citypop
+    title: Japanese city pop
+    category: multilingual
+    prompt: >-
+      Japanese city pop, glossy 80s production, funky bass, bright electric
+      piano, smooth female vocal, neon evening optimism.
+    genre: [city pop, jpop]
+    mood: [nostalgic, glossy]
+    instruments: [electric piano, funk bass, drum kit, synth]
+    expects_instruments: [vocals, keyboards, bass, drums, synth]
+    bpm: 106
+    key: B major
+    vocal: { present: true, gender: female, style: smooth, language: ja }
+    lyrics: |
+      [Verse]
+      街の灯りが 流れてゆく
+      窓の向こう 夜がひらく
+      [Chorus]
+      走り出そう 二人の未来へ
+      朝が来るまで 止まらないで
+
+  - id: french_chanson
+    title: French chanson
+    category: multilingual
+    heldout: true
+    prompt: >-
+      Classic French chanson with accordion, soft brushed drums, upright bass
+      and an intimate male vocal, Parisian café warmth.
+    genre: [chanson]
+    mood: [intimate, nostalgic]
+    instruments: [accordion, upright bass, brushed drums]
+    expects_instruments: [vocals, accordion, bass, drums]
+    bpm: 90
+    key: G minor
+    vocal: { present: true, gender: male, style: intimate, language: fr }
+    lyrics: |
+      [Couplet]
+      Sous les toits gris de la ville qui dort
+      Je garde ta voix comme un trésor
+      [Refrain]
+      Reste encore, le temps d'une chanson
+      Les rues nous connaissent par nos prénoms
+
+  - id: bangla_ballad
+    title: Bangla ballad
+    category: multilingual
+    prompt: >-
+      Gentle Bangla ballad, harmonium and acoustic guitar with soft tabla,
+      tender male vocal, monsoon-evening melancholy.
+    genre: [ballad, bangla adhunik]
+    mood: [tender, melancholic]
+    instruments: [harmonium, acoustic guitar, tabla]
+    expects_instruments: [vocals, harmonium, acoustic_guitar, tabla, percussion]
+    bpm: 80
+    key: D major
+    vocal: { present: true, gender: male, style: tender, language: bn }
+    lyrics: |
+      [Verse]
+      বৃষ্টি ভেজা এই শহরের গানে
+      তোমার কথা মনে পড়ে ক্ষণে ক্ষণে
+      [Chorus]
+      ফিরে এসো আবার আমার গানে
+      হারানো দিনের সুরে, এই প্রাণে
+
+  # ---- 10. unseen / compositional ------------------------------------------
+  - id: woodwind_quintet_brushes
+    title: Woodwind quintet with brushed drums
+    category: compositional
+    prompt: >-
+      Playful woodwind quintet — flute, oboe, clarinet, bassoon, horn — swinging
+      lightly over jazz brushed drums, chamber-jazz crossover charm.
+    genre: [chamber jazz, classical crossover]
+    mood: [playful, light]
+    instruments: [flute, oboe, clarinet, bassoon, french horn, brushed drums]
+    expects_instruments: [flute, oboe, clarinet, woodwinds, horn, drums]
+    bpm: 116
+    key: F major
+
+  - id: cello_synth_whisper
+    title: Cello and synth with whispered vocal
+    category: compositional
+    heldout: true
+    prompt: >-
+      Slow-motion piece pairing a deep solo cello with glassy synth pads and a
+      barely-whispered female vocal, fragile and futuristic.
+    genre: [ambient, modern classical]
+    mood: [fragile, futuristic]
+    instruments: [cello, synth pads]
+    expects_instruments: [cello, strings, synth, vocals]
+    bpm: 62
+    key: E minor
+    vocal: { present: true, gender: female, style: whispered, language: en }
+
+  - id: brass_edm_drop
+    title: Brass band EDM drop
+    category: compositional
+    prompt: >-
+      Festival EDM track whose drop is carried by a real brass band riff instead
+      of a synth lead, big room drums, euphoric horn stabs.
+    genre: [edm, brass band]
+    mood: [euphoric, massive]
+    instruments: [brass section, drum machine, synth bass]
+    expects_instruments: [brass, trumpet, trombone, drums, bass, synth]
+    bpm: 128
+    key: F minor
+
+  - id: tabla_strings_fusion
+    title: Tabla and string orchestra fusion
+    category: compositional
+    prompt: >-
+      Cinematic fusion of intricate tabla rhythms with a sweeping string
+      orchestra and drone, East-meets-West concert piece, building intensity.
+    genre: [world fusion, cinematic]
+    mood: [hypnotic, sweeping]
+    instruments: [tabla, string orchestra, tanpura drone]
+    expects_instruments: [tabla, percussion, strings]
+    bpm: 92
+    key: D minor
+
+  - id: music_box_orchestra
+    title: Music box into orchestra
+    category: compositional
+    heldout: true
+    prompt: >-
+      Delicate music-box melody that slowly blossoms into a full warm orchestra
+      with choir, childlike wonder growing into grandeur.
+    genre: [cinematic, lullaby]
+    mood: [wondrous, tender]
+    instruments: [music box, orchestra, choir]
+    expects_instruments: [chromatic_percussion, strings, brass, choir, vocals]
+    bpm: 76
+    key: C major
+
+  - id: baroque_metal
+    title: Baroque metal
+    category: compositional
+    prompt: >-
+      Neoclassical metal piece quoting baroque harpsichord figures between fast
+      harmonised electric guitar runs, double-kick drums and organ swells.
+    genre: [neoclassical metal, baroque]
+    mood: [virtuosic, dramatic]
+    instruments: [harpsichord, electric guitar, organ, bass, double-kick drums]
+    expects_instruments: [harpsichord, keyboards, electric_guitar, organ, bass, drums]
+    bpm: 152
+    key: A minor
