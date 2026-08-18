@@ -140,6 +140,44 @@ class AceStepAdapter(FoundationAdapter):
         else:
             self._pipe = self._pipe.to(self.device)
 
+        # SongForge adapter weights. Env-driven so the ablation harness can run
+        # control and treatment with the identical pipeline and settings, the
+        # adapter being the only difference. Application is verified, never
+        # assumed: a LoKr that silently matched zero modules would make the
+        # "treatment" a second copy of the control and fake a null result.
+        import os
+
+        lora_path = os.environ.get("SONGFORGE_LORA") or None
+        if lora_path:
+            self._apply_lokr(lora_path)
+
+    def _apply_lokr(self, lora_path: str) -> None:
+        from pathlib import Path as _Path
+
+        candidate = _Path(lora_path)
+        weight_file = candidate if candidate.is_file() else next(
+            iter(sorted(candidate.glob("**/lokr_weights.safetensors"))), None
+        )
+        if weight_file is None:
+            weight_file = next(iter(sorted(candidate.glob("**/adapter_model.safetensors"))), None)
+        if weight_file is None:
+            raise RuntimeError(f"SONGFORGE_LORA={lora_path}: no adapter weights found")
+
+        from lycoris import create_lycoris_from_weights
+
+        network, _ = create_lycoris_from_weights(1.0, str(weight_file), self._pipe.transformer)
+        matched = len(getattr(network, "loras", []) or [])
+        if matched == 0:
+            raise RuntimeError(
+                f"{weight_file}: LoKr matched 0 modules in the diffusers transformer — "
+                "module names differ between the native and diffusers layouts. "
+                "Refusing to generate: the treatment would silently equal the control."
+            )
+        network.merge_to()
+        self._lora_file = str(weight_file)
+        self._lora_matched = matched
+        print(f"LoKr applied: {matched} modules from {weight_file}")
+
     def _compose_prompt(self, request: SongRequest) -> str:
         """Fold the untyped controls into the caption.
 
