@@ -80,3 +80,39 @@ only if stems are unneeded and its NC-SA relicensing risk is accepted;
 - redux mixture-hours and extracted-FLAC size are derivations;
 - slakh.com was read despite a broken TLS cert (GitHub Pages misconfig);
   every overlapping fact cross-checked against Zenodo and slakh-utils.
+
+## Fidelity verification before training (2026-08-18, evidence on file)
+
+Checked at the user's request before any LoKr step ran, against the pinned
+upstream `training_v2` code and the actual extracted files:
+
+1. **Upstream feeds the VAE 48 kHz**: `_TARGET_SR = 48000` at module level in
+   `acestep/training/dataset_builder_modules/preprocess_vae.py`.
+2. **Upstream resamples automatically**:
+   `load_audio_stereo(audio_path, target_sample_rate, max_duration)` —
+   `if sr != target_sample_rate: audio = Resample(sr, target_sample_rate)(audio)`.
+3. **Upstream converts mono→stereo automatically**:
+   `if audio.shape[0] == 1: audio = audio.repeat(2, 1)`; >2 ch truncated.
+   It performs **no normalization**.
+4. **Nothing is being destroyed**: the selected Slakh source files are
+   **natively 44,100 Hz, 1 channel, 16-bit** — verified with ffprobe on the
+   extracted corpus (`44100,1,16` on sampled stems; 1,361 FLACs total for the
+   100 tracks). There is no stereo/spatial information in the source to lose,
+   and our Stage 04 keeps the native rate (44.1→44.1 is an identity), so the
+   only resample in the whole chain is the single canonical 44.1→48 kHz done
+   by the official ACE-Step code.
+5. **Slakh is mono by construction** (slakh-utils: mono 44.1 kHz 16-bit FLAC)
+   — consistent with the ffprobe evidence above.
+6. **The baseline model is natively 48 kHz stereo** (frozen-8 outputs are
+   48 kHz stereo WAV), matching `_TARGET_SR` and the mono→stereo duplication.
+
+Deliberate Stage 04 transformations, none of them lossy to spectral content:
+60 s segmentation, silence rejection, and per-segment peak normalization to
+−1 dBFS (max +30 dB gain). Upstream normalizes nothing; ours equalizes sample
+levels so quiet-but-audible stems train at usable amplitude. The corpus's
+inter-stem LUFS relationships are not conditioning inputs to the trainer, and
+inaudible stems were already excluded by the −30 LUFS selection floor.
+
+**Verdict: the running Stage 04 already implements the quality-first pipeline
+(source fidelity → segment/filter → manifests → official 48 kHz-stereo
+conversion → VAE tensors). No regeneration needed; Stages 01–03 untouched.**
