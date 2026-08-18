@@ -50,15 +50,26 @@ class TestReadSheet:
         with pytest.raises(SystemExit, match="not a number"):
             lr.read_sheet(path)
 
-    def test_repo_template_parses_with_zero_scores(self):
+    def test_repo_sheet_holds_the_recorded_partial_scores(self):
+        """The 2026-08-18 coarse review: overall_realism only, nothing invented."""
         rows = lr.read_sheet(ROOT / "benchmarks" / "listening_review.csv")
         assert set(rows) == {"piano", "violin", "guitar", "rock", "edm",
                              "cinematic", "vocal", "rich_mix"}
+        assert rows["violin"]["overall_realism"] == 7.0
+        assert rows["rich_mix"]["overall_realism"] == 7.0
+        for track in ("piano", "guitar", "rock", "edm", "cinematic", "vocal"):
+            assert rows[track]["overall_realism"] == 3.5
+        # Every other required dimension stays unscored — no score was fabricated.
+        for track, scores in rows.items():
+            for dimension in lr.REQUIRED_DIMENSIONS:
+                if dimension == "overall_realism":
+                    continue
+                assert scores[dimension] in (None, lr.NOT_APPLICABLE), (track, dimension)
         filled, expected, missing = lr.completeness(rows)
-        assert filled == 0  # the gate is still closed
         # 8 tracks x 8 required dims, minus the 12 N/A vocal cells on 6 instrumentals
         assert expected == 8 * 8 - 12
-        assert len(missing) == expected
+        assert filled == 8
+        assert len(missing) == expected - 8
 
 
 class TestCompleteness:
