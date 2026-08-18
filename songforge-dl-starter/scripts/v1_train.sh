@@ -43,8 +43,15 @@ t1_install() {
   [ -d "$ACE" ] || git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5.git "$ACE"
   cd "$ACE"
   python -c "import sys; assert (3,11) <= sys.version_info[:2] < (3,13), sys.version"
+  # flash-attn compiles from source (~1 h for all archs). Reuse a wheel cached
+  # on Drive from a previous VM; otherwise build only the L4's sm_89 with more
+  # parallel jobs, then cache the result so a runtime recycle never pays twice.
+  mkdir -p "$V1/wheels"
+  pip install -q "$V1"/wheels/flash_attn*.whl 2>/dev/null && echo "flash-attn from Drive cache" || true
+  export MAX_JOBS=8 TORCH_CUDA_ARCH_LIST="8.9" FLASH_ATTN_CUDA_ARCHS="89"
   pip install -q -r requirements.txt
   pip install -q -e .
+  find /root/.cache/pip -name "flash_attn*.whl" -exec cp -n {} "$V1/wheels/" \; 2>/dev/null || true
   python -c "import peft, lycoris; print('training deps ok')"
 }
 
