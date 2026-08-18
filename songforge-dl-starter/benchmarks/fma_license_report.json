@@ -1,0 +1,107 @@
+{
+  "total_tracks": 106574,
+  "per_bucket": {
+    "cc0_public_domain": {
+      "tracks": 1820,
+      "hours": 97.2,
+      "estimated_gb": 10.7
+    },
+    "cc_by": {
+      "tracks": 7019,
+      "hours": 508.9,
+      "estimated_gb": 59.4
+    },
+    "cc_by_sa": {
+      "tracks": 2802,
+      "hours": 180.6,
+      "estimated_gb": 22.5
+    },
+    "cc_by_nc": {
+      "tracks": 93713,
+      "hours": 7353.4,
+      "estimated_gb": 872.9
+    },
+    "cc_by_nd": {
+      "tracks": 903,
+      "hours": 58.9,
+      "estimated_gb": 6.2
+    },
+    "other_unknown": {
+      "tracks": 317,
+      "hours": 26.4,
+      "estimated_gb": 2.5
+    }
+  },
+  "deployable_default": {
+    "tracks": 8839,
+    "hours": 606.1,
+    "estimated_gb": 70.2,
+    "genre_top_distribution": {
+      "(untagged)": 5310,
+      "Electronic": 635,
+      "Rock": 534,
+      "Old-Time / Historic": 454,
+      "Pop": 379,
+      "Experimental": 346,
+      "Hip-Hop": 330,
+      "Classical": 328,
+      "Instrumental": 200,
+      "Folk": 178,
+      "International": 69,
+      "Spoken": 27,
+      "Jazz": 24,
+      "Blues": 10,
+      "Easy Listening": 7,
+      "Soul-RnB": 4,
+      "Country": 4
+    },
+    "language_code_distribution": {
+      "(none)": 7608,
+      "en": 1109,
+      "fr": 40,
+      "es": 15,
+      "it": 13,
+      "pt": 7,
+      "ar": 6,
+      "tr": 4,
+      "hi": 3,
+      "ms": 2,
+      "id": 2,
+      "hy": 2
+    }
+  },
+  "flagged_cc_by_sa": {
+    "tracks": 2802,
+    "hours": 180.6,
+    "estimated_gb": 22.5,
+    "genre_top_distribution": {
+      "(untagged)": 1664,
+      "Electronic": 234,
+      "Hip-Hop": 225,
+      "Experimental": 224,
+      "Rock": 177,
+      "Classical": 96,
+      "Instrumental": 56,
+      "International": 33,
+      "Pop": 22,
+      "Soul-RnB": 17,
+      "Jazz": 15,
+      "Blues": 12,
+      "Old-Time / Historic": 12,
+      "Folk": 11,
+      "Spoken": 3,
+      "Country": 1
+    },
+    "language_code_distribution": {
+      "(none)": 2479,
+      "en": 316,
+      "es": 7
+    }
+  },
+  "caveats": [
+    "duration/bit_rate are artist-supplied metadata; sizes are estimates",
+    "~14% of CC0 labels historically misfiled \u2014 re-verify high-stakes tracks",
+    "no instrument tags exist in tracks.csv; instrument coverage requires audio-side tagging",
+    "language_code is a weak vocal/multilingual proxy, often blank"
+  ]
+}
