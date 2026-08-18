@@ -48,3 +48,25 @@ alignment — which we already run for lyric-recall evaluation.
 No NC corpus is ever silently mixed into the deployable adapter. If an NC
 corpus is ever used for a research-only comparison adapter, it is labelled as
 such in its config (`licence_class: research-only`) and in every report.
+
+## Gap-closure research round 2 (2026-08-18, verified on official pages)
+
+New DEPLOYABLE finds:
+
+| dataset | licence | size | role |
+| --- | --- | --- | --- |
+| [SingStyle111](https://zenodo.org/records/10265401) | CC-BY-4.0 ✅ | 12.8 h, 111 songs, 8 pro singers | **the lyric-aligned singing find**: pop/jazz/bel canto, EN/ZH/IT, lyrics + MIDI + phoneme alignment; per-song cover-composition check before public audio release |
+| [Open Goldberg](https://opengoldbergvariations.org/) + [Open WTC](https://welltemperedclavier.org/) | CC0 ✅ | ~3.3 h studio piano | real-piano fidelity anchor |
+| [Musopen Complete Chopin](https://archive.org/details/musopen-chopin) | CC0 ✅ | ~8–12 h, 104 tracks | largest permissive real-piano block |
+| [Musopen Kickstarter DVD](https://archive.org/details/musopen-lossless-dvd) | PD ✅ | several hours | real full-orchestra (Brahms 1–4, Beethoven 3, Tchaikovsky 6…) + string quartets |
+| [Cantoría](https://zenodo.org/records/5878677) | CC-BY-4.0 ✅ | 11 songs, SATB | Spanish-language ensemble singing |
+| [SingVERSE](https://huggingface.co/datasets/amphion/SingVERSE) | CC-BY-4.0 ✅ | 18.1 h EN/ZH vocal pairs | clean vocal audio / augmentation, no alignment |
+| [Bach Violin Dataset](https://zenodo.org/records/6050245) | "Other (Open)", per-file — audit after download | 6.5 h solo violin | only substantial solo-violin corpus; conditional |
+| [cc0-music-captioned](https://huggingface.co/datasets/mrfakename/cc0-music-captioned) | CC0 (HF card; aggregator provenance — gate per-track) | 8,680 tracks / 294 GB, captioned | large captioned instrumental pool |
+| [VSCO 2 CE](https://versilian-studios.com/vsco-community/) | CC0 ✅ | ~3 GB samples | orchestral timbre augmentation only (notes, not songs) |
+
+Confirmed blocked in round 2: PiJAMA + PIAST (NC — jazz/pop real piano stays an open gap),
+DALI (NC-SA annotations, YouTube audio), JamendoLyrics (NC per-track), Saraga (CC-BY-NC — Hindi
+gap stays open), JVS-MuSiC (research-only — Japanese beyond PJS stays open),
+Aalto anechoic (contact-only). **Bangla singing: nothing exists under any open licence** —
+the honest options are collection/commissioning, not downloading.

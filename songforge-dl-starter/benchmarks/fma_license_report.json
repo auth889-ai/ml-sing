@@ -103,5 +103,37 @@
     "~14% of CC0 labels historically misfiled \u2014 re-verify high-stakes tracks",
     "no instrument tags exist in tracks.csv; instrument coverage requires audio-side tagging",
     "language_code is a weak vocal/multilingual proxy, often blank"
-  ]
+  ],
+  "deployable_genres_resolved": {
+    "tracks": 8839,
+    "recovered_from_genres_all": 4831,
+    "truly_untagged": 479,
+    "top_genres": {
+      "Pop": 1322,
+      "Rock": 1225,
+      "Experimental": 1222,
+      "Instrumental": 984,
+      "Folk": 803,
+      "Electronic": 775,
+      "Noise": 681,
+      "Hip-Hop": 679,
+      "Old-Time / Historic": 614,
+      "Classical": 519,
+      "Ambient": 464,
+      "Avant-Garde": 341,
+      "International": 338,
+      "Hip-Hop Beats": 244,
+      "Soundtrack": 239,
+      "Industrial": 223,
+      "Ambient Electronic": 190,
+      "Jazz": 189,
+      "Sound Art": 183,
+      "Indie-Rock": 129,
+      "Sound Collage": 123,
+      "Psych-Folk": 122,
+      "Minimalism": 119,
+      "Country": 118,
+      "Chip Music": 99
+    }
+  }
 }
