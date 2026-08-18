@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# SongForge V1 training — ACE-Step 1.5 official training_v2 CLI (MIT), LoKr.
+#
+#   bash scripts/v1_train.sh <acestep_data_dir> <checkpoint_out_dir>
+#
+# Idempotent like the driver: each step markers on Drive, so a dropped runtime
+# resumes with the same command. Trainer facts pinned from the upstream repo
+# (commit 14c0211): headless CLI `train.py fixed`, dataset JSON + two-pass
+# preprocess to .pt tensors, epoch-boundary checkpoints with --resume-from.
+# The Gradio/Side-Step standalone (CC BY-NC-SA) is NOT used; acestep/training_v2
+# inside the official repo is MIT.
+set -uo pipefail
+
+DATA_DIR="${1:?data dir}"
+CKPT_OUT="${2:?checkpoint out dir}"
+DRIVE_ROOT="${DRIVE_ROOT:-/content/drive/MyDrive/songforge-dl}"
+V1="$DRIVE_ROOT/v1"
+MARK="$V1/markers"
+ACE=/content/ACE-Step-1.5
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$MARK" "$V1/logs" "$CKPT_OUT"
+
+stage() {
+  local name="$1" fn="$2"
+  if [ -f "$MARK/$name.done" ]; then echo "== $name: already done"; return 0; fi
+  echo "== $name: starting $(date -u +%H:%M:%S)"
+  if "$fn" 2>&1 | tee -a "$V1/logs/$name.log"; then
+    touch "$MARK/$name.done"; echo "== $name: DONE"
+  else
+    echo "== $name: FAILED"; exit 1
+  fi
+}
+
+t0_dataset_json() {
+  python "$REPO_ROOT/scripts/build_acestep_training_json.py" \
+      --manifest "$DRIVE_ROOT/processed/slakh100_44k_lora/manifests" \
+      --audio-root "$DRIVE_ROOT/processed/slakh100_44k_lora" \
+      --output "$DATA_DIR/dataset.json" \
+      --split train
+}
+
+t1_install() {
+  [ -d "$ACE" ] || git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5.git "$ACE"
+  cd "$ACE"
+  python -c "import sys; assert (3,11) <= sys.version_info[:2] < (3,13), sys.version"
+  pip install -q -r requirements.txt
+  pip install -q -e .
+  python -c "import peft, lycoris; print('training deps ok')"
+}
+
+t2_weights() {
+  cd "$ACE"
+  # VAE + text encoder from the main bundle, plus the XL-turbo DiT. Local disk;
+  # cheap to re-fetch relative to a Drive round-trip.
+  acestep-download --dir /content/checkpoints
+  acestep-download --model acestep-v15-xl-turbo --dir /content/checkpoints
+  du -sh /content/checkpoints
+}
+
+t3_preprocess_tensors() {
+  cd "$ACE"
+  # Tensors go to Drive so a runtime recycle does not repeat this pass.
+  python train.py fixed \
+      --checkpoint-dir /content/checkpoints \
+      --model-variant xl_turbo \
+      --preprocess \
+      --audio-dir "$DATA_DIR" \
+      --dataset-json "$DATA_DIR/dataset.json" \
+      --tensor-output "$V1/tensors" \
+      --max-duration 240
+  du -sh "$V1/tensors"
+}
+
+t4_train() {
+  cd "$ACE"
+  RESUME=()
+  latest=$(ls -d "$CKPT_OUT"/checkpoints/epoch_* 2>/dev/null | sort -V | tail -1 || true)
+  if [ -n "${latest:-}" ]; then
+    echo "resuming from $latest"
+    RESUME=(--resume-from "$latest")
+  fi
+  # Per the frozen experiment card: LoKr dim 64 / alpha 128, lr 0.03 in the
+  # weight-decompose regime, batch 1 x grad-accum 4, bf16. --save-every 1 keeps
+  # the loss horizon inside one epoch on a runtime that drops every 10-40 min.
+  python train.py fixed \
+      --checkpoint-dir /content/checkpoints \
+      --model-variant xl_turbo \
+      --adapter-type lokr \
+      --dataset-dir "$V1/tensors" \
+      --output-dir "$CKPT_OUT" \
+      --lokr-linear-dim 64 --lokr-linear-alpha 128 --lokr-weight-decompose \
+      --lr 0.03 \
+      --batch-size 1 --gradient-accumulation 4 \
+      --precision bf16 \
+      --epochs 3 --save-every 1 \
+      --seed 20260818 --yes "${RESUME[@]}"
+}
+
+stage t0_dataset_json      t0_dataset_json
+stage t1_install           t1_install
+stage t2_weights           t2_weights
+stage t3_preprocess_tensors t3_preprocess_tensors
+# NOTE: t4 has no marker on purpose — rerunning always resumes training from
+# the latest checkpoint until the epoch budget completes.
+t4_train 2>&1 | tee -a "$V1/logs/t4_train.log"
+echo "training run finished; checkpoints in $CKPT_OUT"
