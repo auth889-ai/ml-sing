@@ -11,32 +11,40 @@ blank rather than guessed.
 
 ## Scoring
 
-All dimensions **1–10, where 10 is best**. `artifacts` is phrased as *freedom
-from* artifacts, so higher is better there too — no dimension is inverted.
-Leave a cell blank if you would rather not score it; blank means unscored, not
-zero, and the summary reports what is missing.
+All dimensions **1–10, where 10 is best**. `artifact_freedom` is phrased as
+*freedom from* artifacts, so higher is better there too — no dimension is
+inverted. Cell conventions: **blank = not scored yet** (never a zero),
+**N/A = does not apply to this track** (pre-filled for the vocal dimensions on
+the six instrumental tracks).
 
-Every track:
+Required on every track (the first eight columns):
 
 | dimension | question |
 | --- | --- |
-| overall | how good is this as a piece of music |
-| realism | does it sound like real instruments or obviously synthetic |
-| instrument_presence | are the *requested* instruments actually audible |
-| arrangement | is it rich and layered, or thin and simple |
+| overall_realism | does the whole thing sound like real music by real players, or obviously synthetic |
+| instrument_realism | do the individual instruments sound like the real instrument |
+| vocal_realism | does the voice sound human (`vocal`, `rich_mix` only; N/A elsewhere) |
+| lyrics_intelligibility | can you make out the words (N/A on instrumentals) |
 | prompt_adherence | did it make the song that was asked for |
-| artifacts | freedom from noise, distortion, glitches (10 = clean) |
-| coherence | does it hold together musically over 60 s |
+| structure_coherence | does it hold together musically over 60 s — sections, transitions, an actual song shape |
+| spectral_clarity | bright and full-range, or muffled/dull as if behind a curtain (the measured band-limit flag — listen for this especially on piano and violin) |
+| artifact_freedom | freedom from noise, distortion, glitches, warbles (10 = clean) |
 
-`vocal` and `rich_mix` additionally:
+Optional diagnostic columns — fill only if something stands out; they sharpen
+which fix gets picked but never block the analysis:
 
 | dimension | question |
 | --- | --- |
-| vocal_realism | does the voice sound human |
-| lyric_intelligibility | can you make out the words |
-| phrasing | natural, connected phrasing or mechanical and segmented |
+| instrument_presence | are the *requested* instruments actually audible |
+| arrangement | rich and layered, or thin and simple |
+| phrasing | natural, connected vocal phrasing or mechanical and segmented |
 | pitch_stability | steady pitch, or drifting and unstable |
 | emotion | is there a performance, or is it flat |
+
+The scoring rubric also sits beside every player on the private listening page
+(the "SongForge First Eight" artifact), so scoring can happen while listening
+without switching windows. The page carries the same frozen audio — nothing was
+regenerated.
 
 ## What was requested, per track
 
