@@ -55,6 +55,24 @@ def main() -> None:
     if args.split != "all":
         records = [r for r in records if r.split == args.split]
 
+    # A manifests directory usually holds per-split files *and* a combined
+    # all.jsonl, so globbing yields every record twice. Downstream that is not
+    # cosmetic: the trainer names each tensor after the audio stem, so a
+    # duplicated record makes the second write collide with the first and be
+    # counted as a failure. Deduplicate on the audio path, which is the true
+    # identity of a training item.
+    seen: set[str] = set()
+    deduped = []
+    for record in records:
+        if record.path in seen:
+            continue
+        seen.add(record.path)
+        deduped.append(record)
+    if len(deduped) != len(records):
+        print(f"deduplicated {len(records) - len(deduped)} repeated manifest rows "
+              f"({len(records)} -> {len(deduped)} unique audio paths)")
+    records = deduped
+
     audio_root = Path(args.audio_root)
     samples = []
     skipped_licence = 0
