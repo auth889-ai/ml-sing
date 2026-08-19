@@ -103,7 +103,14 @@ t3_preprocess_tensors() {
 }
 
 t4_train() {
-  cd "$ACE"
+  # The trainer sanitises every user path against a safe root that is simply
+  # the working directory at import time (acestep/training/path_safety.py:
+  # _SAFE_ROOT = _resolve(os.getcwd())). Running from the repo therefore
+  # rejects our Drive paths outright:
+  #   ValueError: Path escapes safe root: '.../v1/tensors' root='/content/ACE-Step-1.5'
+  # Run from /content instead, which contains both the repo and the Drive
+  # mount, so the guard still applies but admits the checkpoint/tensor dirs.
+  cd /content
   RESUME=()
   latest=$(ls -d "$CKPT_OUT"/checkpoints/epoch_* 2>/dev/null | sort -V | tail -1 || true)
   if [ -n "${latest:-}" ]; then
@@ -116,7 +123,7 @@ t4_train() {
   # The trainer asks "Start training? [Y/n]" interactively (no CLI flag for it
   # in this build; a detached stdin hangs forever at the prompt) — answer via
   # stdin. printf, not `yes`: pipefail would turn yes's SIGPIPE into failure.
-  printf 'Y\n' | python train.py fixed \
+  printf 'Y\n' | python "$ACE/train.py" fixed \
       --checkpoint-dir /content/checkpoints \
       --model-variant xl_turbo \
       --adapter-type lokr \
