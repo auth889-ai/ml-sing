@@ -59,6 +59,11 @@ t1_install() {
     pip install -q /content/wheels_out/flash_attn*.whl
   fi
   pip install -q -r requirements.txt
+  # requirements pins torchcodec>=0.9.1 which resolves to 0.11.0+cu128 — that
+  # build cannot load against torch 2.10.0+cu128 (libtorchcodec_core4.so:
+  # undefined symbol torch_dtype_float4_e2m1fn_x2; core5/6/7 need FFmpeg>=5,
+  # Colab ships 4.4). 0.10.0+cu128 loads and decodes (verified on the L4 VM).
+  pip install -q "torchcodec==0.10.0" --extra-index-url https://download.pytorch.org/whl/cu128
   pip install -q -e .
   cp -n /content/wheels_out/flash_attn*.whl "$V1/wheels/" 2>/dev/null || true
   python -c "import flash_attn; print('flash_attn OK', flash_attn.__version__)"
@@ -78,9 +83,13 @@ t2_weights() {
 t3_preprocess_tensors() {
   cd "$ACE"
   # Tensors go to Drive so a runtime recycle does not repeat this pass.
+  # --dataset-dir/--output-dir are required by the CLI even in preprocess mode
+  # (verified against train.py fixed --help on the live runtime).
   python train.py fixed \
       --checkpoint-dir /content/checkpoints \
       --model-variant xl_turbo \
+      --dataset-dir "$V1/tensors" \
+      --output-dir "$CKPT_OUT" \
       --preprocess \
       --audio-dir "$DATA_DIR" \
       --dataset-json "$DATA_DIR/dataset.json" \
@@ -111,7 +120,7 @@ t4_train() {
       --batch-size 1 --gradient-accumulation 4 \
       --precision bf16 \
       --epochs 3 --save-every 1 \
-      --seed 20260818 --yes "${RESUME[@]}"
+      --seed 20260818 "${RESUME[@]}"
 }
 
 stage t0_dataset_json      t0_dataset_json
