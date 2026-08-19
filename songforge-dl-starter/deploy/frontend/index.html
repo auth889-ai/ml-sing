@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SongForge</title>
+<style>
+  :root {
+    --bg: #0f0e11;
+    --panel: #17161b;
+    --panel-2: #1e1c23;
+    --ink: #ece9e4;
+    --ink-dim: #97918a;
+    --line: #2a2830;
+    --amber: #e8a13c;
+    --amber-dim: #8a6224;
+    --good: #6fbf8f;
+    --bad: #d97a6c;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.55 -apple-system, "Segoe UI", Inter, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 2.5rem 1rem 4rem;
+  }
+  header { text-align: center; margin-bottom: 2rem; }
+  h1 {
+    font-size: clamp(2.2rem, 6vw, 3.4rem); letter-spacing: 0.24em;
+    font-weight: 750; text-indent: 0.24em;
+  }
+  h1 .forge { color: var(--amber); }
+  .tagline { color: var(--ink-dim); margin-top: 0.4rem; font-size: 0.95rem; }
+  main { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 1rem; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1.25rem;
+  }
+  label { display: block; font-size: 0.78rem; letter-spacing: 0.08em;
+          text-transform: uppercase; color: var(--ink-dim); margin-bottom: 0.35rem; }
+  textarea, input[type=text], input[type=number], select {
+    width: 100%; background: var(--panel-2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 0.65rem 0.75rem; font: inherit;
+  }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--amber-dim); border-color: transparent; }
+  textarea { resize: vertical; min-height: 5.5rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.9rem; margin-top: 1rem; }
+  .row { margin-top: 1rem; }
+  .quality { display: flex; gap: 0.5rem; }
+  .quality button {
+    flex: 1; padding: 0.55rem; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--ink-dim); font: inherit; cursor: pointer;
+  }
+  .quality button.active { border-color: var(--amber); color: var(--amber); }
+  #generate {
+    width: 100%; margin-top: 1.25rem; padding: 0.9rem;
+    font: 700 1.05rem/1 inherit; letter-spacing: 0.12em;
+    background: var(--amber); color: #17130b; border: 0; border-radius: 10px; cursor: pointer;
+  }
+  #generate:disabled { background: var(--amber-dim); cursor: wait; }
+  #generate:focus-visible { outline: 3px solid var(--ink); }
+  .stages { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+  .stage {
+    font: 0.78rem/1 var(--mono); padding: 0.45rem 0.7rem; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--ink-dim);
+  }
+  .stage.on { border-color: var(--amber); color: var(--amber); }
+  .stage.done { border-color: var(--good); color: var(--good); }
+  #status-line { font-family: var(--mono); font-size: 0.85rem; color: var(--ink-dim); min-height: 1.4em; }
+  #status-line.error { color: var(--bad); }
+  audio { width: 100%; margin: 0.9rem 0 0.6rem; }
+  .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.5rem; }
+  .actions a, .actions button {
+    padding: 0.5rem 0.9rem; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel-2); color: var(--ink); font: inherit; font-size: 0.9rem;
+    text-decoration: none; cursor: pointer;
+  }
+  .actions a:hover, .actions button:hover { border-color: var(--amber); }
+  .meta { font: 0.78rem/1.7 var(--mono); color: var(--ink-dim); margin-top: 0.8rem; white-space: pre-wrap; }
+  .warnings { color: var(--amber); font-size: 0.85rem; margin-top: 0.6rem; }
+  #result { display: none; }
+  footer { color: var(--ink-dim); font-size: 0.78rem; margin-top: 2.5rem; text-align: center; max-width: 640px; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SONG<span class="forge">FORGE</span></h1>
+  <p class="tagline">Free-form music generation — ACE-Step 1.5 foundation, SongForge-trained adapter</p>
+</header>
+
+<main>
+  <form class="card" id="form">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" required maxlength="2000"
+      placeholder="Emotional cinematic song, intimate female vocal, grand piano intro, expressive violin, electric guitar chorus, live drums, warm strings, huge final chorus…"></textarea>
+
+    <div class="row">
+      <label for="lyrics">Lyrics <span style="text-transform:none">(optional — leave empty for instrumental or model-written)</span></label>
+      <textarea id="lyrics" maxlength="6000" placeholder="[verse]&#10;…"></textarea>
+    </div>
+
+    <div class="grid">
+      <div><label for="language">Language</label>
+        <select id="language">
+          <option value="en">English</option><option value="bn">Bengali</option>
+          <option value="es">Spanish</option><option value="fr">French</option>
+          <option value="de">German</option><option value="it">Italian</option>
+          <option value="pt">Portuguese</option><option value="ru">Russian</option>
+          <option value="ja">Japanese</option><option value="ko">Korean</option>
+          <option value="zh">Chinese</option>
+        </select></div>
+      <div><label for="duration">Duration (s)</label>
+        <input type="number" id="duration" value="60" min="10" max="240"></div>
+      <div><label for="bpm">BPM</label>
+        <input type="text" id="bpm" placeholder="auto" inputmode="numeric"></div>
+      <div><label for="key">Key</label>
+        <input type="text" id="key" placeholder="auto (e.g. C minor)"></div>
+      <div><label for="seed">Seed</label>
+        <input type="text" id="seed" placeholder="auto" inputmode="numeric"></div>
+      <div><label>Quality</label>
+        <div class="quality">
+          <button type="button" id="q-fast" class="active">Fast</button>
+          <button type="button" id="q-best">Best</button>
+        </div></div>
+    </div>
+
+    <button id="generate" type="submit">GENERATE</button>
+  </form>
+
+  <section class="card" id="result">
+    <div class="stages">
+      <span class="stage" data-stage="queued">Queued</span>
+      <span class="stage" data-stage="generating">Generating</span>
+      <span class="stage" data-stage="ranking">Ranking</span>
+      <span class="stage" data-stage="finishing">Finishing</span>
+    </div>
+    <div id="status-line"></div>
+    <div id="player-wrap" style="display:none">
+      <audio id="player" controls></audio>
+      <div class="actions">
+        <a id="dl-wav" download>Download WAV</a>
+        <a id="dl-mp3" download style="display:none">Download MP3</a>
+        <button id="variation" type="button">Generate Variation</button>
+        <button id="new-song" type="button">New Song</button>
+      </div>
+      <div class="warnings" id="warnings"></div>
+      <div class="meta" id="meta"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Songs are generated by a machine-learning system and may require rights review before
+  commercial use. SongForge trains and serves its own adapter on top of the MIT-licensed
+  ACE-Step 1.5 foundation model.
+</footer>
+
+<script>
+"use strict";
+// Same-origin /api/* — vercel.json rewrites to the GPU backend. No secrets here.
+const API = "/api";
+const $ = (id) => document.getElementById(id);
+let quality = "fast";
+let pollTimer = null;
+let lastRequest = null;
+
+$("q-fast").onclick = () => setQuality("fast");
+$("q-best").onclick = () => setQuality("best");
+function setQuality(q) {
+  quality = q;
+  $("q-fast").classList.toggle("active", q === "fast");
+  $("q-best").classList.toggle("active", q === "best");
+}
+
+function setStage(name, state) {
+  document.querySelectorAll(".stage").forEach(el => {
+    if (el.dataset.stage === name) el.className = "stage " + state;
+  });
+}
+function resetStages() {
+  document.querySelectorAll(".stage").forEach(el => el.className = "stage");
+}
+function status(text, isError) {
+  const line = $("status-line");
+  line.textContent = text;
+  line.className = isError ? "error" : "";
+}
+
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const body = {
+    prompt: $("prompt").value.trim(),
+    lyrics: $("lyrics").value.trim() || null,
+    duration_seconds: Number($("duration").value) || 60,
+    vocal_language: $("language").value,
+    quality: quality,
+    seed: parseInt($("seed").value, 10) || Math.floor(Math.random() * 2 ** 31),
+  };
+  const bpm = parseInt($("bpm").value, 10);
+  if (bpm) body.bpm = bpm;
+  const key = $("key").value.trim();
+  if (key) body.key = key;
+  lastRequest = body;
+  await submit(body);
+});
+
+$("variation").onclick = () => {
+  if (!lastRequest) return;
+  submit({ ...lastRequest, seed: Math.floor(Math.random() * 2 ** 31) });
+};
+$("new-song").onclick = () => {
+  clearTimeout(pollTimer);
+  $("result").style.display = "none";
+  $("player-wrap").style.display = "none";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+async function submit(body) {
+  clearTimeout(pollTimer);
+  $("generate").disabled = true;
+  $("result").style.display = "block";
+  $("player-wrap").style.display = "none";
+  resetStages();
+  setStage("queued", "on");
+  status("Submitting…");
+  try {
+    const res = await fetch(`${API}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    if (data.control_warnings?.length) {
+      $("warnings").textContent = "Note: " + data.control_warnings.join(" · ");
+    } else {
+      $("warnings").textContent = "";
+    }
+    poll(data.id);
+  } catch (err) {
+    status(String(err.message || err), true);
+    $("generate").disabled = false;
+  }
+}
+
+async function poll(jobId) {
+  try {
+    const res = await fetch(`${API}/jobs/${jobId}`);
+    const job = await res.json();
+    if (!res.ok) throw new Error(job.detail || `HTTP ${res.status}`);
+
+    if (job.status === "queued") {
+      setStage("queued", "on");
+      status(`Queued — position ${job.queue_position ?? "…"}`);
+    } else if (job.status === "running") {
+      setStage("queued", "done");
+      const phase = job.phase || "generating";
+      ["generating", "ranking", "finishing"].forEach(name => {
+        setStage(name, name === phase ? "on"
+               : ["generating","ranking","finishing"].indexOf(name) <
+                 ["generating","ranking","finishing"].indexOf(phase) ? "done" : "");
+      });
+      status(phase === "generating" ? "Generating audio…"
+           : phase === "ranking" ? "Scoring candidate takes…"
+           : "Finishing (loudness, peaks, encode)…");
+    } else if (job.status === "done") {
+      ["queued","generating","ranking","finishing"].forEach(name => setStage(name, "done"));
+      status("Done.");
+      showResult(job);
+      return;
+    } else if (job.status === "failed" || job.status === "rejected") {
+      throw new Error(job.error || "Generation failed");
+    }
+    pollTimer = setTimeout(() => poll(jobId), 2500);
+  } catch (err) {
+    status(String(err.message || err), true);
+    $("generate").disabled = false;
+  }
+}
+
+function showResult(job) {
+  $("generate").disabled = false;
+  $("player-wrap").style.display = "block";
+  const wav = `${API}/jobs/${job.id}/audio`;
+  $("player").src = wav;
+  $("dl-wav").href = wav;
+  if (job.result?.mp3_available) {
+    $("dl-mp3").style.display = "";
+    $("dl-mp3").href = `${API}/jobs/${job.id}/audio.mp3`;
+  } else {
+    $("dl-mp3").style.display = "none";
+  }
+  const r = job.result || {};
+  $("meta").textContent =
+    `seed ${r.seed ?? "?"} · ${r.duration_seconds ?? "?"}s · ${r.sample_rate ?? "?"} Hz` +
+    (r.candidates_evaluated ? ` · best of ${r.candidates_evaluated} takes` : "") +
+    (r.model ? `\n${r.model} + SongForge adapter` : "");
+}
+</script>
+</body>
+</html>
