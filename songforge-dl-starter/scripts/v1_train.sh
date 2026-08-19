@@ -113,7 +113,10 @@ t4_train() {
   # Per the frozen experiment card: LoKr dim 64 / alpha 128, lr 0.03 in the
   # weight-decompose regime, batch 1 x grad-accum 4, bf16. --save-every 1 keeps
   # the loss horizon inside one epoch on a runtime that drops every 10-40 min.
-  python train.py fixed \
+  # The trainer asks "Start training? [Y/n]" interactively (no CLI flag for it
+  # in this build; a detached stdin hangs forever at the prompt) — answer via
+  # stdin. printf, not `yes`: pipefail would turn yes's SIGPIPE into failure.
+  printf 'Y\n' | python train.py fixed \
       --checkpoint-dir /content/checkpoints \
       --model-variant xl_turbo \
       --adapter-type lokr \
