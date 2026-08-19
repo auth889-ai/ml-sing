@@ -14,7 +14,8 @@ do not restart it; reconnect and check it first.
 | Preprocessing → `processed/slakh100_44k_lora` (23 GB, 60 s segments) | DONE |
 | Seven dataset gates (per split + all): LICENSE, PROVENANCE, DUPLICATE, QUALITY, METADATA, SPLIT-LEAKAGE, ACE-STEP FORMAT | **ALL PASS** (`v1/gates_*.json`) |
 | AUDIO FORMAT GATE (44.1k mono native → upstream 48k stereo conversion; no stereo loss possible) | **PASS** (evidence in `docs/SLAKH100_DESIGN.md`) |
-| Trainer dataset JSON (`acestep_lora/slakh100/dataset.json`) | DONE — **7,252 samples** (train split only; upstream consumes ONLY this list, dir never scanned) |
+| Trainer dataset JSON (`acestep_lora/slakh100/dataset.json`) | DONE — **3,626 unique segments**. The file on Drive still lists 7,252 rows because the builder globbed both `train.jsonl` and `all.jsonl`; every row is duplicated (3,626 pairs, all with an *identical* audio path — verified, so no audio was lost). Fixed in `build_acestep_training_json.py` by deduplicating on audio path. Training reads the tensor dir, not this JSON, so V1 is unaffected. |
+| Tensor preprocessing (t3) | **COMPLETE — 3,626 final tensors, 13 GB, 0 orphaned intermediates, 0 missing vs unique stems.** The log's "Processed 3626/7252, Failed 3626" is the duplicate rows colliding on `{stem}.pt`, not real failures. |
 | ACE-Step weights (bundle + `acestep-v15-xl-turbo`) → `/content/checkpoints` | DONE — 28 GB (t2 marker set) |
 | flash-attn wheel | **VERIFIED + CACHED** (2026-08-19 ~00:00 UTC). `flash_attn-2.8.3.post1-cp312-cp312-linux_x86_64.whl`, SHA256 `f5ca206997514e0fd1b68d5111f775cd25700916584897f0443e814d8e2f9d40`, gate PASS (fresh-process import + CUDA bf16 fwd/bwd, finite outputs/grads) on Python 3.12.13 / torch 2.10.0+cu128 / CUDA 12.8 / nvcc r12.8 / L4 cc 8.9. Cached to Drive `v1/wheels/` with `flash_attn_env.json`. Future runtimes: `pip install v1/wheels/flash_attn*.whl` — never recompile. |
 | torchcodec | requirements resolve to 0.11.0+cu128 which CANNOT load with torch 2.10.0+cu128 (core4: `undefined symbol torch_dtype_float4_e2m1fn_x2`; core5/6/7 need FFmpeg≥5, Colab has 4.4). **Fix: `torchcodec==0.10.0+cu128` — verified decode of a real processed WAV.** Pinned in `v1_train.sh` t1. |
@@ -77,6 +78,20 @@ from this repo (clipboard-paste base64 zip; repo is private, no tokens in Colab)
 - Before full training: report tensor counts, matched modules > 0, trainable params > 0 + %, one optimizer smoke step (finite loss/grads, params change, peak VRAM). Loss decreasing does NOT equal success.
 - Frozen-8 ablation: identical settings (seed 20260818, 60 s, bf16, 8 steps, shift 3.0), adapter the only change; control dir `foundation_benchmarks/ace_step_15_baseline_frozen` is read-only. Baseline human scores: violin≈7, rich_mix≈7, others≈3.5. Accept needs +1.0 mean on the weak six AND violin/rich_mix within 0.5, then the 51-prompt generalization benchmark (12 held-out prompts scored first-touch); verdict is **V1 ACCEPTED / REJECTED on generated audio quality and generalization**.
 - Adapter loading for the ablation: `SONGFORGE_LORA` env → `src/songforge/generation/adapters/acestep.py` (hard-fails if 0 modules match).
+
+## RESUME-AWARE PREPROCESSING (use for V2; V1's tensors are already built)
+
+`scripts/resume_preprocess.py` replaces a bare `train.py fixed --preprocess`
+for any future corpus. Upstream is only partly resumable and that cost this
+project ~4 h: pass 1 skips a sample only when the **final** `.pt` exists, so a
+recycle mid-pass-1 orphans every `.tmp.pt`; pass 2 only finalises intermediates
+its own run produced; and both write with a bare `torch.save`, so a kill can
+leave a truncated tensor that later looks "present". The script adds atomic
+writes (temp → fsync → `os.replace`), validation of existing tensors with
+regeneration of corrupt ones, and adoption of orphaned intermediates directly
+into pass 2. Rerunning the same command after an interruption is always safe
+and cheap. Validation judges completeness from the zip archive, never a
+byte-count floor.
 
 ## NEXT MILESTONES
 
