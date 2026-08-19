@@ -111,6 +111,33 @@ t4_train() {
   # Run from /content instead, which contains both the repo and the Drive
   # mount, so the guard still applies but admits the checkpoint/tensor dirs.
   cd /content
+
+  # A starved trainer from an earlier attempt still holds VRAM and the dataset
+  # lock; clear it before starting a new one.
+  pkill -f "train.py fixed" 2>/dev/null && sleep 5 || true
+
+  # Stage the tensors on LOCAL disk. Drive stays the durable store, but it must
+  # not sit in the per-step read path: the Colab FUSE mount stalls under
+  # sustained random reads (observed: dataloader blocked, GPU pinned at 0%,
+  # while a plain `ls` on the mount timed out after 15 s). The stager verifies
+  # count, zero-byte files, archive integrity and a random torch.load sample,
+  # and fails loudly rather than training on a partial corpus.
+  LOCAL_TENSORS=/content/tensors_local
+  python "$REPO_ROOT/scripts/v1_stage_tensors.py" \
+      --source "$V1/tensors" --dest "$LOCAL_TENSORS" \
+      --sample 25 --report "$V1/staging_report.json" || {
+    echo "FATAL: tensor staging failed verification"; return 1; }
+
+  # Continuous status for humans, so nobody has to poll a notebook.
+  pkill -f v1_watch.py 2>/dev/null || true
+  setsid nohup python "$REPO_ROOT/scripts/v1_watch.py" \
+      --log "$V1/logs/t4_train.log" \
+      --checkpoints "$CKPT_OUT" \
+      --local-status /content/v1_status.json \
+      --drive-status "$V1/status.json" \
+      --interval 60 > /content/v1_watch.log 2>&1 < /dev/null &
+  echo "status monitor started (v1/status.json)"
+
   RESUME=()
   latest=$(ls -d "$CKPT_OUT"/checkpoints/epoch_* 2>/dev/null | sort -V | tail -1 || true)
   if [ -n "${latest:-}" ]; then
@@ -127,7 +154,7 @@ t4_train() {
       --checkpoint-dir /content/checkpoints \
       --model-variant xl_turbo \
       --adapter-type lokr \
-      --dataset-dir "$V1/tensors" \
+      --dataset-dir "$LOCAL_TENSORS" \
       --output-dir "$CKPT_OUT" \
       --lokr-linear-dim 64 --lokr-linear-alpha 128 --lokr-weight-decompose \
       --lr 0.03 \
