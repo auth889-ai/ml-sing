@@ -77,6 +77,10 @@ t2_weights() {
   # always on PATH after an editable install, so invoke the module directly.
   python -m acestep.model_downloader --dir /content/checkpoints
   python -m acestep.model_downloader --model acestep-v15-xl-turbo --dir /content/checkpoints
+  # The downloader stores the DiT under its HF repo name, but the trainer's
+  # official --model-variant xl_turbo expects checkpoints/xl_turbo (observed:
+  # "[FAIL] Model directory not found: /content/checkpoints/xl_turbo", exit 0).
+  ln -sfn /content/checkpoints/acestep-v15-xl-turbo /content/checkpoints/xl_turbo
   du -sh /content/checkpoints
 }
 
