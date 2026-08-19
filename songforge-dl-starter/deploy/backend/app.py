@@ -81,6 +81,33 @@ class GenerateRequest(BaseModel):
     quality: str = Field("fast", pattern="^(fast|best)$")
 
     def to_song_request(self) -> SongRequest:
+        # A prompt-only request goes through the planner, which derives
+        # instruments/genre/mood/vocals/structure from the text itself and
+        # reports the evidence. Explicitly-typed fields always win: if the
+        # caller sets any structured control, we honour their exact spec and
+        # skip derivation entirely.
+        has_structured = bool(
+            self.genre or self.mood or self.instruments or self.structure
+            or self.vocal_gender or self.vocal_style
+        )
+        if not has_structured:
+            from songforge.generation.planner import plan
+
+            planned = plan(
+                self.prompt.strip(),
+                lyrics=self.lyrics,
+                duration_seconds=self.duration_seconds,
+                language=self.vocal_language,
+                bpm=self.bpm,
+                key=self.key,
+                seed=self.seed,
+            )
+            request = planned.request
+            if self.time_signature:
+                request.extra["time_signature"] = self.time_signature
+            request.extra["planner_derived"] = planned.derived
+            return request
+
         vocal = None
         if self.lyrics or self.vocal_gender or self.vocal_style:
             vocal = VocalSpec(
