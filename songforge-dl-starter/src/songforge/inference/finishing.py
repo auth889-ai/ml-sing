@@ -48,8 +48,10 @@ class FinishingReport:
     def to_dict(self) -> dict:
         out = {}
         for key, value in self.__dict__.items():
-            if isinstance(value, float):
-                out[key] = round(value, 3) if np.isfinite(value) else None
+            if isinstance(value, (float, np.floating)):
+                out[key] = round(float(value), 3) if np.isfinite(value) else None
+            elif isinstance(value, np.integer):
+                out[key] = int(value)
             else:
                 out[key] = value
         return out

@@ -75,6 +75,10 @@ class GenerateRequest(BaseModel):
     mood: list[str] = []
     structure: list[str] = []
     seed: int = 0
+    #: "fast" = one take; "best" = up to SONGFORGE_BEST_N takes, objectively
+    #: ranked, top take returned. Ranking removes provably broken takes; it
+    #: does not certify quality, and the response says which seeds ran.
+    quality: str = Field("fast", pattern="^(fast|best)$")
 
     def to_song_request(self) -> SongRequest:
         vocal = None
@@ -125,33 +129,107 @@ def get_adapter() -> Any:
 
 
 def run_job(job: Job) -> None:
-    """Executed on the queue worker. One job at a time on the GPU."""
+    """Executed on the queue worker. One job at a time on the GPU.
+
+    Pipeline: generate (1 take, or up to N for quality=best) → rank (best
+    mode only) → finish (loudness/peaks/fades, WAV + MP3). Phase is written
+    to the job so the UI can show real progress rather than a spinner.
+    """
     adapter = get_adapter()
+    quality = job.payload.pop("quality", "fast") if isinstance(job.payload, dict) else "fast"
     request = SongRequest.from_dict(job.payload)
     deadline = time.time() + SETTINGS.job_timeout_seconds
 
     SETTINGS.output_dir.mkdir(parents=True, exist_ok=True)
-    target = SETTINGS.output_dir / f"{job.id}.wav"
-    result = adapter.generate(request, target)
+    workdir = SETTINGS.output_dir / job.id
+    workdir.mkdir(parents=True, exist_ok=True)
 
+    # --- generate ---------------------------------------------------------
+    job.phase = "generating"
+    n_takes = SETTINGS.best_candidates if quality == "best" else 1
+    takes: list[tuple[int, Path, Any]] = []
+    for offset in range(n_takes):
+        seed = request.seed + offset
+        take_request = SongRequest.from_dict({**job.payload, "seed": seed})
+        path = workdir / f"take_{seed}.wav"
+        result = adapter.generate(take_request, path)
+        if result.error:
+            if not takes:
+                raise RuntimeError(result.error)
+            break  # keep the takes we have rather than failing the job
+        takes.append((seed, path, result))
+        # Never start a take the deadline cannot afford: assume the next take
+        # costs what the slowest one so far cost.
+        slowest = max((r.real_time_factor or 1.0) for _, _, r in takes)
+        if time.time() + slowest * request.duration_seconds > deadline:
+            break
+    if not takes:
+        raise RuntimeError("no takes were generated")
     if time.time() > deadline:
         raise TimeoutError(
             f"generation exceeded {SETTINGS.job_timeout_seconds:.0f}s and was discarded"
         )
-    if result.error:
-        raise RuntimeError(result.error)
 
-    job.audio_path = target
-    job.control_warnings = list(result.resolution.warnings)
+    # --- rank -------------------------------------------------------------
+    ranking_summary: list[dict[str, Any]] = []
+    best_seed, best_path, best_result = takes[0]
+    if len(takes) > 1:
+        job.phase = "ranking"
+        from songforge.evaluation.song import analyze_song
+        from songforge.inference.ranking import FATAL_FLAGS, score_candidate
+
+        scored = []
+        for seed, path, result in takes:
+            report = analyze_song(path)
+            entry = {
+                "seed": seed,
+                "score": round(score_candidate(report), 2),
+                "flags": report.get("flags", []),
+                "fatal": any(f in FATAL_FLAGS for f in report.get("flags", [])),
+            }
+            scored.append((entry, path, result))
+            ranking_summary.append(entry)
+        usable = [s for s in scored if not s[0]["fatal"]] or scored
+        winner = max(usable, key=lambda s: s[0]["score"])
+        best_seed, best_path, best_result = winner[0]["seed"], winner[1], winner[2]
+
+    # --- finish -----------------------------------------------------------
+    final_wav = SETTINGS.output_dir / f"{job.id}.wav"
+    final_mp3 = SETTINGS.output_dir / f"{job.id}.mp3"
+    finishing_report: dict[str, Any] | None = None
+    if SETTINGS.finishing_enabled:
+        job.phase = "finishing"
+        from songforge.inference.finishing import finish
+
+        finishing_report = finish(best_path, final_wav, final_mp3).to_dict()
+    else:
+        best_path.replace(final_wav)
+
+    # workdir holds the losing takes; they served their purpose
+    for _, path, _ in takes:
+        path.unlink(missing_ok=True)
+    try:
+        workdir.rmdir()
+    except OSError:
+        pass
+
+    job.audio_path = final_wav
+    job.mp3_path = final_mp3 if final_mp3.exists() else None
+    job.control_warnings = list(best_result.resolution.warnings)
     job.result = {
-        "duration_seconds": result.duration_seconds,
-        "sample_rate": result.sample_rate,
-        "channels": result.channels,
-        "model": result.model_id,
-        "checkpoint": result.checkpoint,
-        "seed": request.seed,
-        "real_time_factor": result.real_time_factor,
-        "controls_applied": result.resolution.applied,
+        "duration_seconds": best_result.duration_seconds,
+        "sample_rate": best_result.sample_rate,
+        "channels": best_result.channels,
+        "model": best_result.model_id,
+        "checkpoint": best_result.checkpoint,
+        "seed": best_seed,
+        "quality": quality,
+        "candidates_evaluated": len(takes) if len(takes) > 1 else None,
+        "ranking": ranking_summary or None,
+        "finishing": finishing_report,
+        "mp3_available": job.mp3_path is not None,
+        "real_time_factor": best_result.real_time_factor,
+        "controls_applied": best_result.resolution.applied,
     }
 
 
@@ -257,7 +335,7 @@ def generate(body: GenerateRequest, request: Request) -> JSONResponse:
         warnings = resolution.warnings
         applied = resolution.applied
 
-    job = queue.submit(client_id(request), song.to_dict())
+    job = queue.submit(client_id(request), {**song.to_dict(), "quality": body.quality})
     if job.status is JobStatus.REJECTED:
         raise HTTPException(status_code=503, detail=job.error)
 
@@ -299,4 +377,20 @@ def job_audio(job_id: str) -> Response:
         job.audio_path,
         media_type="audio/wav",
         filename=f"songforge_{job_id}.wav",
+    )
+
+
+@app.get("/api/jobs/{job_id}/audio.mp3")
+def job_audio_mp3(job_id: str) -> Response:
+    job = queue.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Unknown job")
+    if job.status is not JobStatus.DONE or not job.mp3_path:
+        raise HTTPException(status_code=409, detail="MP3 not available for this job")
+    if not job.mp3_path.exists():
+        raise HTTPException(status_code=410, detail="Audio expired and was cleaned up")
+    return FileResponse(
+        job.mp3_path,
+        media_type="audio/mpeg",
+        filename=f"songforge_{job_id}.mp3",
     )

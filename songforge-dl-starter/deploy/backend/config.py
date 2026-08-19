@@ -52,6 +52,13 @@ class Settings:
     max_queue_depth: int = _int("SONGFORGE_MAX_QUEUE", 20)
     job_timeout_seconds: float = _float("SONGFORGE_JOB_TIMEOUT", 300.0)
 
+    # --- quality mode -----------------------------------------------------
+    #: "best" renders up to this many seeds and returns the top-ranked take.
+    #: Rendering stops early if the job deadline would be blown.
+    best_candidates: int = _int("SONGFORGE_BEST_N", 3)
+    #: Conservative finishing (loudness/peaks/fades) + MP3 alongside the WAV.
+    finishing_enabled: bool = os.environ.get("SONGFORGE_FINISHING", "1") == "1"
+
     # --- rate limiting and quota ----------------------------------------
     requests_per_minute: int = _int("SONGFORGE_RPM", 4)
     daily_quota_per_client: int = _int("SONGFORGE_DAILY_QUOTA", 30)

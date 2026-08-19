@@ -42,6 +42,9 @@ class Job:
     started_at: float | None = None
     finished_at: float | None = None
     audio_path: Path | None = None
+    mp3_path: Path | None = None
+    #: Coarse progress within a running job: generating → ranking → finishing.
+    phase: str | None = None
     error: str | None = None
     #: Controls the model could not honour. Surfaced to the client so the UI can
     #: say "BPM was applied, instruments were a suggestion" rather than implying
@@ -63,8 +66,10 @@ class Job:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "id": self.id,
             "job_id": self.id,
             "status": self.status.value,
+            "phase": self.phase,
             "created_at": self.created_at,
             "queue_seconds": self.queue_seconds,
             "generate_seconds": self.generate_seconds,
@@ -207,7 +212,7 @@ def cleanup_expired(output_dir: Path, retain_hours: float) -> int:
         return 0
     cutoff = time.time() - retain_hours * 3600.0
     removed = 0
-    for path in output_dir.glob("*.wav"):
+    for path in (*output_dir.glob("*.wav"), *output_dir.glob("*.mp3")):
         try:
             if path.stat().st_mtime < cutoff:
                 path.unlink()
