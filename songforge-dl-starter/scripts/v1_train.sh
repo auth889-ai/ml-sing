@@ -143,5 +143,15 @@ stage t2_weights           t2_weights
 stage t3_preprocess_tensors t3_preprocess_tensors
 # NOTE: t4 has no marker on purpose — rerunning always resumes training from
 # the latest checkpoint until the epoch budget completes.
+#
+# The exit status must be the TRAINER's, not tee's. Without PIPESTATUS this
+# script returned 0 even when training died, so the driver marked 07_train
+# "done" and every later run skipped training entirely — a failure that
+# silently presents itself as a finished experiment.
 t4_train 2>&1 | tee -a "$V1/logs/t4_train.log"
+train_status=${PIPESTATUS[0]}
+if [ "$train_status" -ne 0 ]; then
+  echo "TRAINING FAILED (exit $train_status); refusing to report success"
+  exit "$train_status"
+fi
 echo "training run finished; checkpoints in $CKPT_OUT"
