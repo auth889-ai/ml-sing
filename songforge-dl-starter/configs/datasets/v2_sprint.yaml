@@ -1,0 +1,137 @@
+# SongForge V2 sprint corpus — the multi-corpus adaptation set.
+#
+# Written 2026-08-20 under the 72-hour directive (docs/72H_SPRINT_PLAN.md).
+# V1 (Slakh-100, instrumental only) is a proof-of-training stage; the released
+# model must NOT remain Slakh-100-only. Every capability family below must be
+# represented in the trained adapter.
+#
+# SIZING RULE — this is a sprint corpus, not a maximal one. The target is the
+# largest corpus that can finish tensorization AND training before the freeze
+# at T+46, not the largest corpus that can be downloaded. `segment_budget` is
+# a starting figure; `scripts/v2_budget.py` recomputes it at T+8 from measured
+# preprocessing throughput and shrinks families proportionally, preserving the
+# balance ratios below. Shrinking is expected and is not a failure.
+#
+# LICENCE HONESTY — `licence_status` is either `verified` (rights confirmed
+# against the source's own statement) or `gate_required` (must pass the
+# licence + provenance gate before ANY of its audio enters the deployable
+# model). Nothing here is asserted as verified on assumption. A family whose
+# gate fails is dropped and its budget redistributed, never silently included.
+
+corpus_id: v2_sprint
+built_for: songforge_v2
+segment_budget: 8000          # band 6000-10000; recomputed from real throughput
+segment_seconds: [30, 60]
+sample_rate: 44100            # native; never train realism on resampled 16 kHz
+split_strategy: song_disjoint_per_family
+
+# Representative segments per track, NOT every song exploded into near-copies.
+# A fourth 60 s slice of the same arrangement teaches far less than the first
+# slice of a new one, and it costs the same GPU-seconds to tensorize.
+segmentation:
+  method: stratified_capped
+  max_segments_per_track: 3
+  prefer: high_energy_variance   # pick slices that differ from each other
+  drop_silence: true
+
+# Weighted sampling at train time — never plain concatenation. FMA is the
+# largest pool by far and would otherwise drown the capability-specific
+# corpora that exist precisely to fix V1's known weaknesses.
+mixing:
+  method: weighted_sampling
+  families:
+    slakh_redux:
+      share: 0.27
+      role: arrangement, instrument interaction, multi-stem balance
+      source_url: https://zenodo.org/records/4599666
+      licence: CC-BY-4.0
+      licence_status: verified          # same archive already gated for V1
+      selection: scripts/select_slakh100.py with splits {train:1289,val:270,test:151}
+      target_tracks: [800, 1200]
+      notes: >-
+        Eligibility rules unchanged from V1 (>=6 stems, all rendered,
+        3-6 min). Reuses the V1 archive if the session still holds it.
+    fma_cc:
+      share: 0.35
+      role: real finished music, human performance, genre and production realism
+      source_url: https://os.unil.cloud.switch.ch/fma/fma_full.zip
+      licence: CC0-1.0 + CC-BY (per-track; NC/ND/unknown excluded outright)
+      licence_status: gate_required
+      selection: scripts/select_fma_v2.py --target 3088
+      notes: >-
+        CC0-labelled rows are re-verified individually (~14% known misfiling).
+        Any track resolving to NC, ND, or unknown is dropped from the
+        deployable line with no exception.
+    vocals:
+      share: 0.12
+      role: singing realism, phrasing, lyric intelligibility
+      primary: SingStyle111
+      primary_licence: CC-BY
+      primary_licence_status: gate_required
+      fallback: VocalSet
+      fallback_licence_status: gate_required
+      notes: >-
+        SingStyle111 leads on the strength of lyric-aligned professional
+        singing (12.8 h), which is what V1 wholly lacks — every V1 row carried
+        lyrics [Instrumental]. V2 must not remain purely instrumental if a
+        verified vocal corpus can be prepared in time.
+    piano_strings_orchestra:
+      share: 0.13
+      role: grand piano, violin, cello, string ensemble, orchestral ensemble
+      sources: [Open Goldberg Variations, Open Well-Tempered Clavier, Musopen Chopin, Musopen orchestral]
+      licence: CC0 / public domain (per-item)
+      licence_status: gate_required
+      notes: >-
+        Directly targets the frozen-8 weak tracks (piano scored ~3.5 and
+        measured band-limited at 1406 Hz rolloff). Real studio recordings,
+        not sample-library renders — the point V1's Slakh-only corpus cannot
+        address.
+    guitar:
+      share: 0.07
+      role: guitar timbre, articulation, picking and chord voicing
+      primary: GuitarSet
+      source_url: https://zenodo.org/records/3371780
+      licence_status: gate_required
+      notes: If GuitarSet rights cannot be verified quickly, substitute another
+             verified permissive guitar subset rather than delaying the corpus.
+    drums:
+      share: 0.06
+      role: real drums and percussion realism
+      primary: E-GMD
+      licence: CC-BY-4.0
+      licence_status: gate_required
+      notes: >-
+        Diverse subset sampled across the 43 kits x tempo x style grid.
+        NEVER ingest all ~132 GB merely to claim the dataset was used.
+
+# Auxiliary only — isolated notes damage song structure if mixed into the main
+# training stream. Used for timbre evaluation and instrument presence checks.
+auxiliary:
+  nsynth:
+    role: timbre evaluation, instrument classifier, auxiliary embeddings
+    never_in: main_song_training
+
+# Every record passes all ten gates in order. A record failing any gate is
+# excluded and counted in the corpus report; no gate is skipped for speed.
+gates:
+  - licence
+  - provenance
+  - cross_corpus_duplicate
+  - integrity_decode
+  - silence
+  - clipping_quality
+  - split_leakage
+  - metadata
+  - rich_caption
+  - deployability
+
+# Resume-aware, crash-safe. A runtime recycle must never restart tensorization
+# from zero: a valid existing tensor is skipped, an invalid or missing one is
+# regenerated, and every write is temp -> validate -> atomic rename.
+tensorization:
+  script: scripts/resume_preprocess.py
+  atomic_writes: true
+  validate_existing: true
+  adopt_orphaned_intermediates: true
+  durable_store: drive
+  hot_path: /content/tensors_local      # Drive FUSE never in the per-step read path
