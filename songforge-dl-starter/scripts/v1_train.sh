@@ -20,6 +20,26 @@ ACE=/content/ACE-Step-1.5
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$MARK" "$V1/logs" "$CKPT_OUT"
 
+# Markers must live where their artifacts live. t1 (pip environment) and t2
+# (28 GB of weights on local disk) are destroyed by a runtime recycle, but a
+# marker on Drive survives it — so the driver would report "already done" on a
+# fresh VM and then fail in training with nothing installed. Stages whose
+# output is local therefore mark locally, and are correctly redone after a
+# recycle; Drive-backed stages (dataset, gates, tensors) keep Drive markers.
+LOCAL_MARK=/content/markers
+mkdir -p "$LOCAL_MARK"
+
+stage_local() {
+  local name="$1" fn="$2"
+  if [ -f "$LOCAL_MARK/$name.done" ]; then echo "== $name: already done (this VM)"; return 0; fi
+  echo "== $name: starting $(date -u +%H:%M:%S)"
+  if "$fn" 2>&1 | tee -a "$V1/logs/$name.log"; then
+    touch "$LOCAL_MARK/$name.done"; echo "== $name: DONE"
+  else
+    echo "== $name: FAILED"; exit 1
+  fi
+}
+
 stage() {
   local name="$1" fn="$2"
   if [ -f "$MARK/$name.done" ]; then echo "== $name: already done"; return 0; fi
@@ -165,8 +185,8 @@ t4_train() {
 }
 
 stage t0_dataset_json      t0_dataset_json
-stage t1_install           t1_install
-stage t2_weights           t2_weights
+stage_local t1_install     t1_install
+stage_local t2_weights     t2_weights
 stage t3_preprocess_tensors t3_preprocess_tensors
 # NOTE: t4 has no marker on purpose — rerunning always resumes training from
 # the latest checkpoint until the epoch budget completes.
