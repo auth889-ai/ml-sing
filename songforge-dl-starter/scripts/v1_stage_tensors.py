@@ -29,6 +29,7 @@ import shutil
 import sys
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 FINAL_KEYS = (
@@ -86,6 +87,8 @@ def main() -> int:
     parser.add_argument("--sample", type=int, default=25,
                         help="how many local tensors to fully torch.load")
     parser.add_argument("--report", default=None)
+    parser.add_argument("--workers", type=int, default=16,
+                        help="parallel copy workers; Drive FUSE is latency-bound")
     parser.add_argument("--seed", type=int, default=20260818)
     args = parser.parse_args()
 
@@ -100,23 +103,54 @@ def main() -> int:
         return 1
     print(f"[stage] source tensors: {src_count}")
 
-    copied = skipped = failed = 0
+    # Copy in parallel. Drive's FUSE mount is latency-bound per file, not
+    # bandwidth-bound: a serial loop spends nearly all its time waiting on
+    # round-trips and leaves the link idle. Measured on the live L4 runtime, the
+    # serial version moved ~12 tensors/min, which is ~5 h for the 3,626-tensor
+    # corpus — longer than the training run it exists to feed. Overlapping the
+    # waits recovers that time; the per-file semantics below are unchanged.
+    #
+    # Threads (not processes) are correct here: the work is I/O, so the GIL is
+    # released during the copy, and shutil.copyfile on a pre-created temp name
+    # keeps each worker independent.
+    pending = []
+    skipped = 0
     for src in src_files:
         target = dest / src.name
         if target.exists() and target.stat().st_size == src.stat().st_size:
             skipped += 1
             continue
+        pending.append(src)
+
+    copied = failed = 0
+    done = skipped
+
+    def stage_one(src: Path) -> tuple[str, str | None]:
+        """Copy one tensor. Atomic: a kill never leaves a half file behind."""
+        target = dest / src.name
         tmp = target.with_name(f".{target.name}.partial")
         try:
             shutil.copyfile(src, tmp)
-            os.replace(tmp, target)  # atomic: never leave a half file behind
-            copied += 1
+            os.replace(tmp, target)
+            return src.name, None
         except Exception as exc:  # noqa: BLE001
             tmp.unlink(missing_ok=True)
-            failed += 1
-            print(f"[stage] COPY FAIL {src.name}: {exc}", file=sys.stderr)
-        if (copied + skipped) % 500 == 0:
-            print(f"[stage] {copied + skipped}/{src_count}")
+            return src.name, f"{type(exc).__name__}: {exc}"
+
+    if pending:
+        print(f"[stage] copying {len(pending)} tensors with {args.workers} workers "
+              f"({skipped} already present)")
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            for name, error in pool.map(stage_one, pending):
+                done += 1
+                if error is None:
+                    copied += 1
+                else:
+                    failed += 1
+                    print(f"[stage] COPY FAIL {name}: {error}", file=sys.stderr)
+                if done % 250 == 0:
+                    rate = done / max(time.time() - started, 1e-6) * 60
+                    print(f"[stage] {done}/{src_count}  ({rate:.0f}/min)", flush=True)
 
     local_files = final_tensors(dest)
     local_count = len(local_files)

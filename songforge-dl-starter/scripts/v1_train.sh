@@ -20,6 +20,26 @@ ACE=/content/ACE-Step-1.5
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$MARK" "$V1/logs" "$CKPT_OUT"
 
+# Every training command runs through a pinned interpreter, never bare `python`.
+# Colab's image moved to Python 3.13 / torch 2.11 on 2026-08-22, which the
+# verified flash-attn wheel cannot load; provision_python312_training_env.sh
+# rebuilds the verified 3.12 / torch 2.10 stack in a venv and this points at it.
+# The notebook kernel stays 3.13 and is only a shell.
+VENV="${VENV:-/content/venv-py312-acestep}"
+PY="${SONGFORGE_PY:-$VENV/bin/python}"
+[ -x "$PY" ] || PY=python
+
+# Colab's kernel exports MPLBACKEND=module://matplotlib_inline.backend_inline,
+# and everything launched from a notebook cell inherits it. matplotlib inside
+# the venv has no matplotlib_inline, so it raises at import time:
+#   ValueError: Key backend: 'module://matplotlib_inline.backend_inline'
+#              is not a valid value for backend
+# The failure surfaces a long way from its cause — as a lightning ->
+# torchmetrics -> matplotlib import chain crash during trainer startup, with
+# nothing in the traceback naming Colab or the environment. Pin a headless
+# backend so the trainer never depends on where it was launched from.
+export MPLBACKEND=Agg
+
 # Markers must live where their artifacts live. t1 (pip environment) and t2
 # (28 GB of weights on local disk) are destroyed by a runtime recycle, but a
 # marker on Drive survives it — so the driver would report "already done" on a
@@ -52,7 +72,7 @@ stage() {
 }
 
 t0_dataset_json() {
-  python "$REPO_ROOT/scripts/build_acestep_training_json.py" \
+  "$PY" "$REPO_ROOT/scripts/build_acestep_training_json.py" \
       --manifest "$DRIVE_ROOT/processed/slakh100_44k_lora/manifests" \
       --audio-root "$DRIVE_ROOT/processed/slakh100_44k_lora" \
       --output "$DATA_DIR/dataset.json" \
@@ -60,34 +80,14 @@ t0_dataset_json() {
 }
 
 t1_install() {
-  [ -d "$ACE" ] || git clone --depth 1 https://github.com/ace-step/ACE-Step-1.5.git "$ACE"
-  cd "$ACE"
-  python -c "import sys; assert (3,11) <= sys.version_info[:2] < (3,13), sys.version"
-  # flash-attn compiles from source (~1 h for all archs). Reuse a wheel cached
-  # on Drive from a previous VM; otherwise build only the L4's sm_89 with more
-  # parallel jobs, then cache the result so a runtime recycle never pays twice.
-  mkdir -p "$V1/wheels"
-  pip install -q "$V1"/wheels/flash_attn*.whl 2>/dev/null && echo "flash-attn from Drive cache" || true
-  # flash-attn MUST build without pip's build isolation: the isolated env
-  # provisions its own torch and the extension links against the wrong ABI
-  # (observed: undefined symbol _ZNK3c104cuda10CUDAStream5queryEv). Build the
-  # wheel explicitly against the installed torch, then install everything else.
-  export MAX_JOBS=4 TORCH_CUDA_ARCH_LIST="8.9" FLASH_ATTN_CUDA_ARCHS="89"
-  if ! python -c "import flash_attn" 2>/dev/null; then
-    pip install -q -r <(grep -v "^flash-attn" requirements.txt)
-    pip wheel -q flash-attn --no-build-isolation --no-deps --no-cache-dir -w /content/wheels_out
-    pip install -q /content/wheels_out/flash_attn*.whl
-  fi
-  pip install -q -r requirements.txt
-  # requirements pins torchcodec>=0.9.1 which resolves to 0.11.0+cu128 — that
-  # build cannot load against torch 2.10.0+cu128 (libtorchcodec_core4.so:
-  # undefined symbol torch_dtype_float4_e2m1fn_x2; core5/6/7 need FFmpeg>=5,
-  # Colab ships 4.4). 0.10.0+cu128 loads and decodes (verified on the L4 VM).
-  pip install -q "torchcodec==0.10.0" --extra-index-url https://download.pytorch.org/whl/cu128
-  pip install -q -e .
-  cp -n /content/wheels_out/flash_attn*.whl "$V1/wheels/" 2>/dev/null || true
-  python -c "import flash_attn; print('flash_attn OK', flash_attn.__version__)"
-  python -c "import peft, lycoris; print('training deps ok')"
+  # Delegated: the whole environment question is one concern and it is messy
+  # enough to deserve its own file. The provisioner creates the Python 3.12 /
+  # torch 2.10 venv the cached flash-attn wheel was verified against, installs
+  # ACE-Step into it, and re-runs the flash-attn fwd/bwd gate. It exits non-zero
+  # on any gate failure, so a bad environment can never reach training.
+  bash "$REPO_ROOT/scripts/provision_python312_training_env.sh" || return 1
+  PY="$VENV/bin/python"
+  [ -x "$PY" ] || { echo "provisioner did not produce $PY"; return 1; }
 }
 
 t2_weights() {
@@ -95,8 +95,8 @@ t2_weights() {
   # VAE + text encoder from the main bundle, plus the XL-turbo DiT. Local disk;
   # cheap to re-fetch relative to a Drive round-trip. The console script is not
   # always on PATH after an editable install, so invoke the module directly.
-  python -m acestep.model_downloader --dir /content/checkpoints
-  python -m acestep.model_downloader --model acestep-v15-xl-turbo --dir /content/checkpoints
+  "$PY" -m acestep.model_downloader --dir /content/checkpoints
+  "$PY" -m acestep.model_downloader --model acestep-v15-xl-turbo --dir /content/checkpoints
   # The downloader stores the DiT under its HF repo name, but the trainer's
   # official --model-variant xl_turbo expects checkpoints/xl_turbo (observed:
   # "[FAIL] Model directory not found: /content/checkpoints/xl_turbo", exit 0).
@@ -109,7 +109,7 @@ t3_preprocess_tensors() {
   # Tensors go to Drive so a runtime recycle does not repeat this pass.
   # --dataset-dir/--output-dir are required by the CLI even in preprocess mode
   # (verified against train.py fixed --help on the live runtime).
-  python train.py fixed \
+  "$PY" train.py fixed \
       --checkpoint-dir /content/checkpoints \
       --model-variant xl_turbo \
       --dataset-dir "$V1/tensors" \
@@ -143,14 +143,14 @@ t4_train() {
   # count, zero-byte files, archive integrity and a random torch.load sample,
   # and fails loudly rather than training on a partial corpus.
   LOCAL_TENSORS=/content/tensors_local
-  python "$REPO_ROOT/scripts/v1_stage_tensors.py" \
+  "$PY" "$REPO_ROOT/scripts/v1_stage_tensors.py" \
       --source "$V1/tensors" --dest "$LOCAL_TENSORS" \
       --sample 25 --report "$V1/staging_report.json" || {
     echo "FATAL: tensor staging failed verification"; return 1; }
 
   # Continuous status for humans, so nobody has to poll a notebook.
   pkill -f v1_watch.py 2>/dev/null || true
-  setsid nohup python "$REPO_ROOT/scripts/v1_watch.py" \
+  setsid nohup "$PY" "$REPO_ROOT/scripts/v1_watch.py" \
       --log "$V1/logs/t4_train.log" \
       --checkpoints "$CKPT_OUT" \
       --local-status /content/v1_status.json \
@@ -170,7 +170,7 @@ t4_train() {
   # The trainer asks "Start training? [Y/n]" interactively (no CLI flag for it
   # in this build; a detached stdin hangs forever at the prompt) — answer via
   # stdin. printf, not `yes`: pipefail would turn yes's SIGPIPE into failure.
-  printf 'Y\n' | python "$ACE/train.py" fixed \
+  printf 'Y\n' | "$PY" "$ACE/train.py" fixed \
       --checkpoint-dir /content/checkpoints \
       --model-variant xl_turbo \
       --adapter-type lokr \
