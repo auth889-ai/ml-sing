@@ -1,11 +1,12 @@
 "use client";
 
-// Create page: prompt → submit → poll → play → download → save to library.
+// Create page: compose → submit → poll → play → download → save.
 //
-// Control labels come from /api/capabilities so no knob is presented as
-// stronger than it is: "native" controls condition the model, "prompt"
-// controls are only text the model may or may not follow. A knob that
-// silently does nothing is worse than a missing knob.
+// The composer exists because output variety is bounded by conditioning
+// variety: a three-word prompt lets the model return the same thing every
+// time. Control labels come from /api/capabilities so no knob is presented as
+// stronger than it is — a knob that silently does nothing is worse than a
+// missing knob.
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -18,6 +19,8 @@ import {
   type JobState,
 } from "../../../lib/api";
 import { saveSong } from "../../../lib/library";
+import { compose, EMPTY, type Composition } from "../../../lib/promptkit";
+import Composer from "./Composer";
 
 interface Limits {
   min_duration_seconds: number;
@@ -26,24 +29,14 @@ interface Limits {
   max_lyrics_chars: number;
 }
 
-const IDEAS = [
-  "grand piano solo, slow and cinematic",
-  "violin and cello duet, minor key, mournful",
-  "acoustic guitar and soft female vocal",
-  "piano intro building to a full-band climax",
-];
+const STAGES = ["Planning", "Rendering", "Ranking", "Mastering"];
 
 export default function Page() {
-  const [prompt, setPrompt] = useState("");
+  const [comp, setComp] = useState<Composition>(EMPTY);
   const [lyrics, setLyrics] = useState("");
   const [duration, setDuration] = useState("60");
   const [bpm, setBpm] = useState("");
   const [key, setKey] = useState("");
-  const [timeSignature, setTimeSignature] = useState("");
-  const [language, setLanguage] = useState("en");
-  // A fixed default seed makes every run of the same prompt return byte-identical
-  // audio, which reads as "the model only knows one song". Reproducibility is
-  // opt-in instead: randomise per render unless the user pins a seed.
   const [seed, setSeed] = useState("");
   const [lockSeed, setLockSeed] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -58,16 +51,22 @@ export default function Page() {
   useEffect(() => {
     capabilities()
       .then((c) => setLimits(c.limits as Limits))
-      .catch(() => setLimits(null)); // backend warming up; submit still validates server-side
+      .catch(() => setLimits(null));
     backendStatus().then(setBackend);
   }, []);
 
   const offline = backend !== null && !backend.reachable;
   const modelDown = backend?.reachable === true && backend.modelLoaded === false;
+  const prompt = compose(comp);
 
-  async function onGenerate() {
+  // Which pipeline stage to highlight. Queued work has not started planning yet.
+  const stageIndex =
+    job?.status === "running" ? 1 : job?.status === "done" ? STAGES.length : job ? 0 : -1;
+
+  async function run() {
     setError(null);
     setJob(null);
+
     const usedSeed =
       lockSeed && seed.trim() !== ""
         ? Number(seed)
@@ -75,15 +74,13 @@ export default function Page() {
     if (!lockSeed) setSeed(String(usedSeed));
 
     const body: GenerateBody = {
-      prompt: prompt.trim(),
+      prompt,
       seed: usedSeed,
       duration_seconds: Number(duration) || undefined,
-      vocal_language: language || undefined,
     };
     if (lyrics.trim()) body.lyrics = lyrics.trim();
     if (bpm) body.bpm = Number(bpm);
     if (key.trim()) body.key = key.trim();
-    if (timeSignature.trim()) body.time_signature = timeSignature.trim();
 
     setBusy(true);
     try {
@@ -93,20 +90,19 @@ export default function Page() {
       const settled = await waitFor(submitted.job_id, (s) => {
         if (jobIdRef.current === submitted.job_id) setJob(s);
       });
-      if (jobIdRef.current === submitted.job_id) {
-        setJob(settled);
-        if (settled.status === "done") {
-          saveSong({
-            id: settled.job_id,
-            jobId: settled.job_id,
-            prompt: body.prompt,
-            createdAt: Date.now(),
-            durationSeconds: body.duration_seconds,
-            seed: body.seed,
-          });
-        } else {
-          setError(settled.error ?? `Job ${settled.status}`);
-        }
+      if (jobIdRef.current !== submitted.job_id) return;
+      setJob(settled);
+      if (settled.status === "done") {
+        saveSong({
+          id: settled.job_id,
+          jobId: settled.job_id,
+          prompt,
+          createdAt: Date.now(),
+          durationSeconds: body.duration_seconds,
+          seed: usedSeed,
+        });
+      } else {
+        setError(settled.error ?? `Job ${settled.status}`);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -123,12 +119,11 @@ export default function Page() {
       <header className="page-head">
         <span className="eyebrow">Create</span>
         <h1>
-          Describe a song, get a <span className="accent-text">finished track</span>
+          Compose a prompt, get a <span className="accent-text">finished track</span>
         </h1>
         <p className="lede">
-          A free-form prompt is planned into genre, instruments, key and structure, rendered
-          by ACE-Step 1.5 with the SongForge adapter, ranked across takes, screened for
-          originality, then mastered to WAV and MP3.
+          The more the model is told, the less two songs resemble each other. Type freely,
+          then sharpen it with the options below.
         </p>
       </header>
 
@@ -136,17 +131,16 @@ export default function Page() {
         <div className="note note-warn" style={{ marginBottom: 16 }}>
           <strong>No GPU backend is connected to this deployment.</strong>
           <p style={{ marginTop: 6 }}>
-            The interface below is fully functional, but generation needs a machine with a
-            GPU behind it. Point this deployment at one by setting{" "}
-            <code>SONGFORGE_API_URL</code>, or run the backend locally — the procedure is in{" "}
-            <code>deploy/RUNBOOK.md</code>.
+            The interface is fully functional, but generation needs a machine with a GPU
+            behind it. Set <code>SONGFORGE_API_URL</code> to point at one, or run the backend
+            locally — the procedure is in <code>deploy/RUNBOOK.md</code>.
           </p>
         </div>
       )}
 
       {modelDown && (
         <div className="note note-warn" style={{ marginBottom: 16 }}>
-          <strong>The backend is reachable but its model is not loaded.</strong>
+          <strong>Backend reachable, but its model is not loaded.</strong>
           {backend?.detail && (
             <p style={{ marginTop: 6, fontFamily: "ui-monospace, monospace", fontSize: "0.78rem" }}>
               {backend.detail}
@@ -156,33 +150,14 @@ export default function Page() {
       )}
 
       <section className="card">
-        <label htmlFor="prompt">Prompt — instruments, style, mood</label>
-        <textarea
-          id="prompt"
-          rows={3}
-          maxLength={limits?.max_prompt_chars}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="warm acoustic ballad, fingerpicked guitar, soft female vocal, gentle strings"
-        />
-        <div className="dl-row">
-          {IDEAS.map((idea) => (
-            <button
-              key={idea}
-              type="button"
-              className="dl"
-              style={{ cursor: "pointer" }}
-              onClick={() => setPrompt(idea)}
-            >
-              {idea}
-            </button>
-          ))}
-        </div>
+        <Composer value={comp} onChange={setComp} />
+      </section>
 
+      <section className="card">
         <label htmlFor="lyrics">Lyrics — optional, leave empty for instrumental</label>
         <textarea
           id="lyrics"
-          rows={4}
+          rows={3}
           maxLength={limits?.max_lyrics_chars}
           value={lyrics}
           onChange={(e) => setLyrics(e.target.value)}
@@ -202,7 +177,7 @@ export default function Page() {
             />
             {limits && (
               <div className="hint">
-                {limits.min_duration_seconds}–{limits.max_duration_seconds}s on this deployment
+                {limits.min_duration_seconds}–{limits.max_duration_seconds}s here
               </div>
             )}
           </div>
@@ -215,10 +190,7 @@ export default function Page() {
               placeholder="random each time"
               onChange={(e) => setSeed(e.target.value)}
             />
-            <label
-              htmlFor="lockseed"
-              style={{ display: "flex", gap: 7, alignItems: "center", marginTop: 7 }}
-            >
+            <label htmlFor="lockseed" style={{ display: "flex", gap: 7, alignItems: "center", marginTop: 7 }}>
               <input
                 id="lockseed"
                 type="checkbox"
@@ -229,9 +201,7 @@ export default function Page() {
               Lock this seed
             </label>
             <div className="hint">
-              {lockSeed
-                ? "Locked — same prompt returns the same song."
-                : "New seed every render, so each song differs."}
+              {lockSeed ? "Locked — same prompt returns the same song." : "New seed each render."}
             </div>
           </div>
         </div>
@@ -257,23 +227,32 @@ export default function Page() {
               <input id="key" value={key} placeholder="e.g. A minor"
                 onChange={(e) => setKey(e.target.value)} />
             </div>
-            <div>
-              <label htmlFor="ts">Time signature</label>
-              <input id="ts" value={timeSignature} placeholder="e.g. 4/4"
-                onChange={(e) => setTimeSignature(e.target.value)} />
-            </div>
-            <div>
-              <label htmlFor="lang">Vocal language</label>
-              <input id="lang" value={language} onChange={(e) => setLanguage(e.target.value)} />
-            </div>
           </div>
         )}
 
-        <div style={{ marginTop: 18 }}>
-          <button onClick={onGenerate} disabled={busy || !prompt.trim() || offline}>
+        <div style={{ marginTop: 18, display: "flex", gap: 9, flexWrap: "wrap" }}>
+          <button onClick={run} disabled={busy || !prompt.trim() || offline}>
             {busy ? "Generating…" : offline ? "Backend not connected" : "Generate song"}
           </button>
+          {job?.status === "done" && !busy && (
+            <button className="btn-ghost" onClick={run}>
+              Generate a variation
+            </button>
+          )}
         </div>
+
+        {job && (
+          <div className="pipeline">
+            {STAGES.map((s, i) => (
+              <div
+                key={s}
+                className={`pstage${i < stageIndex ? " pstage-done" : i === stageIndex ? " pstage-on" : ""}`}
+              >
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
 
         {job && (job.status === "queued" || job.status === "running") && (
           <div className="note note-info">
@@ -308,8 +287,7 @@ export default function Page() {
 
       <footer>
         Foundation: ACE-Step 1.5 XL-turbo (MIT, pretrained — not ours). Adapter, planner,
-        ranking, originality screen, finishing and this service: SongForge. Generated audio
-        is deleted from the server a few hours after rendering.
+        ranking, originality screen, finishing and this service: SongForge.
       </footer>
     </>
   );
