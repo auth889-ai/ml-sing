@@ -1,0 +1,49 @@
+MIT License
+
+Copyright (c) 2026 SongForge
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------
+
+THIRD-PARTY COMPONENTS AND TRAINING DATA
+
+This licence covers the SongForge source code. It does not relicense the
+components below, each of which keeps its own terms.
+
+Foundation model
+  ACE-Step 1.5 (XL-turbo variant) — MIT. Used as a frozen pretrained
+  foundation and loaded from local checkpoints. The Gradio/Side-Step
+  standalone distribution (CC BY-NC-SA) is deliberately NOT used; only the
+  MIT-licensed `acestep/training_v2` path inside the official repository is.
+
+Training corpora — every deployable record is CC0 or CC BY, verified against
+each source's own metadata rather than assumed:
+  Slakh2100-redux .................. CC BY 4.0
+  Free Music Archive (subset) ...... CC0 1.0 / CC BY, per track
+  VocalSet ......................... CC BY 4.0  (Zenodo 1193957)
+  MusicNet ......................... CC BY 4.0  (Zenodo 5120004)
+  GuitarSet ........................ CC BY 4.0  (Zenodo 3371780)
+
+Excluded outright from the deployable model: CC BY-NC, CC BY-ND, CC BY-SA,
+and any record whose licence could not be resolved. For the Free Music
+Archive this excluded 93,713 NonCommercial, 2,802 ShareAlike, 903
+NoDerivatives and 317 unknown tracks out of 106,574 censused.
+
+CC BY attribution for the corpora above is carried in docs/ATTRIBUTION.md.
