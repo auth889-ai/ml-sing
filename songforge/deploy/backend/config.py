@@ -24,6 +24,33 @@ def _float(name: str, default: float) -> float:
     return float(os.environ.get(name, default))
 
 
+def _default_dtype() -> str:
+    """Pick the precision the GPU present can actually run.
+
+    bf16 requires compute capability >= 8.0; below that it is emulated and this
+    model produces NaNs. fp16 is native from 7.0 up, and 4,991,023,206
+    parameters at two bytes is roughly 10 GB -- inside a T4's 15 GB. Hardcoding
+    bfloat16 therefore turned every pre-Ampere GPU into "no backend" when it
+    could in fact have served the model.
+
+    Deliberately tolerant: any failure to interrogate CUDA falls back to fp16,
+    which runs everywhere this model is supported, rather than raising at
+    import time on a machine with no GPU at all.
+    """
+    override = os.environ.get("SONGFORGE_DTYPE")
+    if override:
+        return override
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return "float32"
+        major, _ = torch.cuda.get_device_capability(0)
+        return "bfloat16" if major >= 8 else "float16"
+    except Exception:  # noqa: BLE001
+        return "float16"
+
+
 @dataclass(frozen=True)
 class Settings:
     # --- model ---------------------------------------------------------
@@ -31,7 +58,7 @@ class Settings:
     checkpoint: str = os.environ.get("SONGFORGE_CHECKPOINT", "xl-turbo")
     lora_path: str | None = os.environ.get("SONGFORGE_LORA") or None
     device: str = os.environ.get("SONGFORGE_DEVICE", "cuda")
-    dtype: str = os.environ.get("SONGFORGE_DTYPE", "bfloat16")
+    dtype: str = _default_dtype()
 
     #: Load weights at startup rather than on the first request, so the first
     #: visitor does not pay a 60 s cold start and time out.

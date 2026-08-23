@@ -61,6 +61,10 @@ def main() -> int:
     ap.add_argument("--duration", type=float, default=30.0)
     ap.add_argument("--out", default="/content/drive/MyDrive/songforge-dl/gate")
     ap.add_argument("--adapter", default=os.environ.get("SONGFORGE_LORA", ""))
+    ap.add_argument("--dtype", default=None,
+                    choices=["bfloat16", "float16", "float32"],
+                    help="override the precision; by default it is chosen from "
+                         "the GPU's compute capability")
     ap.add_argument("--caption", default=(
         "A tender cinematic piece led by grand piano, joined by an expressive "
         "violin counter-melody and warm string ensemble. Sparse and intimate at "
@@ -79,14 +83,42 @@ def main() -> int:
     # ------------------------------------------------------------ environment
     import torch
 
+    capability = (list(torch.cuda.get_device_capability(0))
+                  if torch.cuda.is_available() else None)
+
+    # Precision is chosen from the GPU, not assumed.
+    #
+    # bf16 needs compute capability >= 8.0. Below that the format is emulated
+    # and lyrics-to-song training produced NaNs, which is why the training
+    # driver refuses a T4 outright. Inference is a different question: fp16 is
+    # native on a T4 (7.5), and 4,991,023,206 parameters at two bytes each is
+    # about 10 GB, which fits inside the T4's 15 GB. So a machine that cannot
+    # train this model can still generate from it -- and a free Colab T4 costs
+    # no compute units.
+    if args.dtype:
+        dtype = args.dtype
+        dtype_reason = "explicitly requested via --dtype"
+    elif capability and capability[0] >= 8:
+        dtype = "bfloat16"
+        dtype_reason = f"compute capability {capability[0]}.{capability[1]} >= 8.0"
+    elif capability:
+        dtype = "float16"
+        dtype_reason = (f"compute capability {capability[0]}.{capability[1]} < 8.0; "
+                        "bf16 is unsafe here, fp16 is native")
+    else:
+        dtype = "float32"
+        dtype_reason = "no CUDA device visible"
+
     log(report, report_path,
         torch=torch.__version__,
         cuda=torch.version.cuda,
         gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
-        compute_capability=list(torch.cuda.get_device_capability(0))
-        if torch.cuda.is_available() else None,
+        compute_capability=capability,
+        dtype=dtype,
+        dtype_reason=dtype_reason,
         checkpoint_dir=CKPT,
         adapter=args.adapter or None)
+    print(f"[gate] precision {dtype} -- {dtype_reason}", flush=True)
 
     try:
         rev = Path(ACE, ".git/HEAD").read_text().strip()
@@ -120,7 +152,7 @@ def main() -> int:
                 elif "device" in low:
                     kwargs[p.name] = "cuda"
                 elif "dtype" in low or "precision" in low:
-                    kwargs[p.name] = "bfloat16"
+                    kwargs[p.name] = dtype
             fn(**kwargs)
             loaded = name
             log(report, report_path, loaded_via=name, load_kwargs=kwargs)

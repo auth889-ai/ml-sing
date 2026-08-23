@@ -36,17 +36,63 @@ import random
 from collections import defaultdict
 from pathlib import Path
 
-# Target shares from configs/datasets/v2_sprint.yaml. Kept here as the
-# authoritative runtime default so a corpus built without the config still has
-# the balance the design calls for.
-TARGET_SHARES: dict[str, float] = {
-    "fma": 0.33,                     # real production, genre diversity
-    "slakh": 0.27,                   # arrangement, instrument interaction
-    "vocals": 0.13,                  # singing realism — V1 had none at all
-    "piano_strings": 0.13,           # acoustic realism, the weakest frozen-8 axis
-    "guitar": 0.07,                  # articulation, voicing
-    "drums": 0.07,                   # percussion realism
+# Fallback shares, used only when no config is supplied. The corpus config is
+# the authoritative source: keeping a second copy here as "the default" is how
+# the two silently diverged once already (config said fma 0.35 / vocals 0.12 /
+# drums 0.06 while this file said 0.33 / 0.13 / 0.07), which meant the balance
+# actually trained on depended on which file you happened to read.
+FALLBACK_SHARES: dict[str, float] = {
+    "fma_cc": 0.35,                     # real production, genre diversity
+    "slakh_redux": 0.27,                # arrangement, instrument interaction
+    "vocals": 0.12,                     # singing realism — V1 had none at all
+    "piano_strings_orchestra": 0.13,    # acoustic realism, weakest frozen-8 axis
+    "guitar": 0.07,                     # articulation, voicing
+    "drums": 0.06,                      # percussion realism
 }
+
+# Short aliases so a families.json written against the old names still resolves.
+FAMILY_ALIASES: dict[str, str] = {
+    "fma": "fma_cc",
+    "slakh": "slakh_redux",
+    "piano_strings": "piano_strings_orchestra",
+}
+
+
+def load_shares(config_path: Path | None) -> tuple[dict[str, float], str]:
+    """Read target shares from the corpus config, which is authoritative.
+
+    Returns the shares and a one-line description of where they came from, so
+    the run report records which file actually decided the balance.
+    """
+    if config_path is None:
+        return dict(FALLBACK_SHARES), "built-in fallback (no --config given)"
+
+    import yaml
+
+    config = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+    families = (config.get("mixing") or {}).get("families") or {}
+    shares = {
+        name: float(spec["share"])
+        for name, spec in families.items()
+        if isinstance(spec, dict) and "share" in spec
+    }
+    if not shares:
+        raise SystemExit(f"{config_path}: no mixing.families[].share entries found")
+
+    total = sum(shares.values())
+    # Shares that do not sum to 1 would quietly rescale the whole corpus, so
+    # this is an error rather than a normalisation.
+    if abs(total - 1.0) > 0.005:
+        raise SystemExit(
+            f"{config_path}: family shares sum to {total:.3f}, expected 1.000")
+    return shares, str(config_path)
+
+
+def resolve_family(name: str, shares: dict[str, float]) -> str:
+    """Map a families.json key onto a config family name."""
+    if name in shares:
+        return name
+    return FAMILY_ALIASES.get(name, name)
 
 MAX_SEGMENTS_PER_TRACK = 3
 
@@ -89,6 +135,9 @@ def load_family(path: Path) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--config", default=None,
+                    help="corpus config (configs/datasets/v2_sprint.yaml); its "
+                         "mixing.families[].share values are authoritative")
     ap.add_argument("--families", required=True,
                     help='JSON mapping family name -> manifest .jsonl path')
     ap.add_argument("--target", type=int, default=8000,
@@ -106,15 +155,25 @@ def main() -> int:
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
-    families: dict[str, str] = json.loads(Path(args.families).read_text())
+    shares, shares_origin = load_shares(Path(args.config) if args.config else None)
+    raw_families: dict[str, str] = json.loads(Path(args.families).read_text())
+    families = {resolve_family(k, shares): v for k, v in raw_families.items()}
 
-    report: dict = {"target": args.target, "families": {}, "shortfalls": []}
+    unknown = sorted(set(families) - set(shares))
+    if unknown:
+        raise SystemExit(
+            f"families.json names no share in the config: {', '.join(unknown)}\n"
+            f"known families: {', '.join(sorted(shares))}")
+
+    report: dict = {"target": args.target, "families": {}, "shortfalls": [],
+                    "shares_from": shares_origin, "shares": shares}
+    print(f"shares from {shares_origin}")
 
     # Build every family's usable pool first, so the achievable corpus size is
     # known before anything is selected.
     pools: dict[str, list[dict]] = {}
     track_counts: dict[str, int] = {}
-    for name in TARGET_SHARES:
+    for name in shares:
         manifest = families.get(name)
         if not manifest or not Path(manifest).exists():
             pools[name], track_counts[name] = [], 0
@@ -146,17 +205,17 @@ def main() -> int:
     # So: surplus families may expand, but only to `share x ceiling`, and
     # scarce families upsample their own pool up to `max_repeat` before
     # yielding any of their share. Repeats are marked, never disguised.
-    quota = {n: int(round(args.target * sh)) for n, sh in TARGET_SHARES.items()}
+    quota = {n: int(round(args.target * sh)) for n, sh in shares.items()}
     ceiling = {n: int(args.target * sh * args.share_ceiling)
-               for n, sh in TARGET_SHARES.items()}
-    unique = {n: min(len(pools[n]), quota[n]) for n in TARGET_SHARES}
+               for n, sh in shares.items()}
+    unique = {n: min(len(pools[n]), quota[n]) for n in shares}
 
     # Redistribute the shortfall across families that still hold unseen
     # segments, bounded by the ceiling so no single family can run away.
     deficit = args.target - sum(unique.values())
     granted: dict[str, int] = defaultdict(int)
     while deficit > 0:
-        eligible = [n for n in TARGET_SHARES
+        eligible = [n for n in shares
                     if unique[n] < min(len(pools[n]), ceiling[n])]
         if not eligible:
             break
@@ -171,7 +230,7 @@ def main() -> int:
             deficit -= give
 
     selected: list[dict] = []
-    for name, share in TARGET_SHARES.items():
+    for name, share in shares.items():
         pool = pools[name]
         take = [dict(r) for r in pool[:unique[name]]]
 
@@ -219,7 +278,7 @@ def main() -> int:
     report["total_unique"] = sum(f.get("unique", 0) for f in report["families"].values())
     report["actual_shares"] = {
         name: round(sum(1 for r in selected if r.get("family") == name) / max(len(selected), 1), 3)
-        for name in TARGET_SHARES
+        for name in shares
     }
 
     print(f"selected {len(selected)} segments "
