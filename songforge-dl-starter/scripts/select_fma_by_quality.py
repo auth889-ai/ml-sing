@@ -5,7 +5,7 @@ Phase B rule: do NOT train on all 106k FMA tracks. Take the deployable
 reproducible criteria — genre diversity, metadata richness, audio quality
 proxies — so FMA adds breadth without drowning the rest of the mix.
 
-    python scripts/select_fma_v2.py \
+    python scripts/select_fma_by_quality.py \
         --tracks-csv data_local/fma_metadata/tracks.csv \
         --genres-csv data_local/fma_metadata/genres.csv \
         --target 4000 \

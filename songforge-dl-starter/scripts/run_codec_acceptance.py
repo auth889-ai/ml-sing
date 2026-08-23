@@ -5,7 +5,7 @@ M02 — Audio Preprocessing & Dataset Pipeline canonical manifest, verifies
 checkpoint resume, exports held-out listening examples, and records the full
 metric set required by the gate.
 
-    python scripts/colab_m03_acceptance.py \
+    python scripts/run_codec_acceptance.py \
         --config configs/codec/codec_m03_tiny.yaml \
         --train-manifest "$M02_OUTPUT_DIR/manifests/train.jsonl" \
         --val-manifest   "$M02_OUTPUT_DIR/manifests/val.jsonl" \

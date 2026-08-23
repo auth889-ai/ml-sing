@@ -8,7 +8,7 @@ each, no duplicated or missing steps.
 
 It answers "was this a fair comparison?" and nothing else. It selects no winner.
 
-    python scripts/m04_fairness_audit.py \
+    python scripts/audit_codec_sweep_fairness.py \
         --output-root "$SONGFORGE_DRIVE/outputs/m04_stage1_authoritative_expanded" \
         --candidates m04_baseline_120hz_q2 m04_a_75hz_q2 m04_b_50hz_q2
 """

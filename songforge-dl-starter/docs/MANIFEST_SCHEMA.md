@@ -132,7 +132,7 @@ Every M02 field is optional and defaulted. A minimal M01-era record still loads:
 
 ## Invariants
 
-Enforced by `scripts/preprocess_dataset.py` and `scripts/colab_m02_acceptance.py`:
+Enforced by `scripts/preprocess_dataset.py` and `scripts/run_preprocessing_acceptance.py`:
 
 - `validate_records` — required fields present, ids unique per path, duration consistent.
 - `assert_provenance_complete` — licence and source survived preprocessing.

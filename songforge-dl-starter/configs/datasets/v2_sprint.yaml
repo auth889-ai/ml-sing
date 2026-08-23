@@ -1,6 +1,6 @@
 # SongForge V2 sprint corpus — the multi-corpus adaptation set.
 #
-# Written 2026-08-20 under the 72-hour directive (docs/72H_SPRINT_PLAN.md).
+# Written 2026-08-20 under the 72-hour directive (docs/SPRINT_PLAN.md).
 # V1 (Slakh-100, instrumental only) is a proof-of-training stage; the released
 # model must NOT remain Slakh-100-only. Every capability family below must be
 # represented in the trained adapter.
@@ -57,7 +57,7 @@ mixing:
       source_url: https://os.unil.cloud.switch.ch/fma/fma_full.zip
       licence: CC0-1.0 + CC-BY (per-track; NC/ND/unknown excluded outright)
       licence_status: gate_required
-      selection: scripts/select_fma_v2.py --target 3088
+      selection: scripts/select_fma_by_quality.py --target 3088
       notes: >-
         CC0-labelled rows are re-verified individually (~14% known misfiling).
         Any track resolving to NC, ND, or unknown is dropped from the

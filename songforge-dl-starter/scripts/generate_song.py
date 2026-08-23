@@ -1,7 +1,7 @@
 """Final local generation CLI contract.
 
 Target usage after integration:
-python scripts/generate.py --prompt "dreamy pop" --lyrics lyrics.txt --duration 20 --seed 42
+python scripts/generate_song.py --prompt "dreamy pop" --lyrics lyrics.txt --duration 20 --seed 42
 """
 
 

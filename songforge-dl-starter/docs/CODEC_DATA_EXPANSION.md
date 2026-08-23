@@ -71,7 +71,7 @@ intact — with 20 songs the smallest movable unit is 5% of the corpus.
 Re-checkable independently at any time:
 
 ```bash
-python scripts/m04_dataset_report.py \
+python scripts/report_codec_dataset.py \
     --manifests "$SONGFORGE_DATA/processed/babyslakh_m04_expanded/manifests"
 ```
 
@@ -118,6 +118,6 @@ Nothing. This is corpus preparation. The codec is **not frozen**, and no latent
 rate or quantizer depth is selected here. Selection happens only after the
 authoritative Stage 1 runs at equal budgets, and is recorded separately.
 
-Related: [M03_RESULT_FROZEN.md](M03_RESULT_FROZEN.md) — the frozen
+Related: [CODEC_RESULTS_FROZEN.md](CODEC_RESULTS_FROZEN.md) — the frozen
 M03 — Neural Audio Codec & Discrete Audio Representation result, which this work
 does not modify.

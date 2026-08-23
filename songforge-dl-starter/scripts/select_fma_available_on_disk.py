@@ -13,7 +13,7 @@ deliberately NOT enumerated — CC BY 1.0/2.0/2.5/3.0/4.0 are all CC BY, and an
 earlier version of this script that listed only 3.0 and 4.0 silently discarded
 1,546 usable tracks (876 kept instead of 2,422).
 
-    python scripts/select_fma_on_disk.py
+    python scripts/select_fma_available_on_disk.py
 """
 
 from __future__ import annotations

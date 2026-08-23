@@ -27,7 +27,7 @@ describe the file. Every clause is grounded in a manifest field; nothing is
 invented, because a caption asserting a trumpet that is not in the audio
 teaches the model that the word "trumpet" means nothing.
 
-    python scripts/build_v2_captions.py \\
+    python scripts/write_training_captions.py \\
         --manifest processed/v2/manifests/train.jsonl \\
         --output   processed/v2/captions.jsonl
 """

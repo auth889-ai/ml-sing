@@ -26,8 +26,8 @@ licence and its weights licence **separately** — see
 
 | component | what it is | evidence |
 | --- | --- | --- |
-| M03 neural audio codec | Conv encoder → RVQ → conv decoder, trained from random init on BabySlakh. No pretrained weights involved. | [M03_RESULT_FROZEN.md](M03_RESULT_FROZEN.md) |
-| M04 codec candidates | Three latent-rate variants trained from scratch at equal budgets. | [M04_STAGE1_RESULT.md](M04_STAGE1_RESULT.md) |
+| M03 neural audio codec | Conv encoder → RVQ → conv decoder, trained from random init on BabySlakh. No pretrained weights involved. | [CODEC_RESULTS_FROZEN.md](CODEC_RESULTS_FROZEN.md) |
+| M04 codec candidates | Three latent-rate variants trained from scratch at equal budgets. | [CODEC_LATENT_RATE_RESULTS.md](CODEC_LATENT_RATE_RESULTS.md) |
 | _LoRA / adapters on the selected foundation_ | pending | |
 
 ---

@@ -43,8 +43,8 @@ fails, cell 3 now stops with an explicit error instead of letting later cells ru
 6. Run only milestone-appropriate jobs:
    - M00: `pytest -q`
    - M01: `python scripts/validate_dataset_registry.py`
-   - M02: `python scripts/colab_m02_acceptance.py`
-   - M03: `python scripts/colab_m03_acceptance.py` (trains from the M02 manifest)
+   - M02: `python scripts/run_preprocessing_acceptance.py`
+   - M03: `python scripts/run_codec_acceptance.py` (trains from the M02 manifest)
 
 ## Milestone Status
 
@@ -61,7 +61,7 @@ raw audio -> validation -> preprocessing -> segmentation
 ```
 
 ```bash
-python scripts/colab_m02_acceptance.py \
+python scripts/run_preprocessing_acceptance.py \
   --dataset-id babyslakh \
   --audio-dir "$SONGFORGE_DATA/raw/babyslakh" \
   --output-dir "$SONGFORGE_DATA/processed/babyslakh_m02" \
@@ -114,7 +114,7 @@ manifest**. No pretrained codec weights are loaded anywhere in this path. Bypass
 `path_source` and fails unless it starts with `m02_manifest`.
 
 ```bash
-python scripts/colab_m03_acceptance.py \
+python scripts/run_codec_acceptance.py \
   --config configs/codec/codec_m03_tiny.yaml \
   --train-manifest "$SONGFORGE_DATA/processed/babyslakh_m02/manifests/train.jsonl" \
   --val-manifest   "$SONGFORGE_DATA/processed/babyslakh_m02/manifests/val.jsonl" \

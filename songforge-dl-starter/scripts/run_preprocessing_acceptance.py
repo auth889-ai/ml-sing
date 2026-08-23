@@ -9,7 +9,7 @@ M02 PASS requires a real approved audio subset (BabySlakh by default). Use
 ``--synthetic`` for a dependency-free rehearsal of the same pipeline; that mode
 reports ``synthetic: true`` and is explicitly NOT an M02 pass.
 
-    python scripts/colab_m02_acceptance.py \
+    python scripts/run_preprocessing_acceptance.py \
         --audio-dir "$SONGFORGE_DATA/raw/babyslakh" \
         --output-dir "$DRIVE_ROOT/processed/babyslakh_m02" \
         --limit-files 12

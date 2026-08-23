@@ -4,7 +4,7 @@ Describes an expanded M02-format corpus and independently re-checks the
 invariants that make it usable for a codec comparison: whole songs on one side
 of every split, no duplicate audio across splits, licence and provenance intact.
 
-    python scripts/m04_dataset_report.py \
+    python scripts/report_codec_dataset.py \
         --manifests "$SONGFORGE_DATA/processed/babyslakh_m04_expanded/manifests"
 """
 

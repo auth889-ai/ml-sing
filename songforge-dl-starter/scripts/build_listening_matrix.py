@@ -13,7 +13,7 @@ heuristic. The script refuses to build a row whose candidates reconstructed
 different source audio, because that row would look like a codec difference
 while actually being a different song.
 
-    python scripts/m04_listening_matrix.py \
+    python scripts/build_listening_matrix.py \
         --output-root "$DRIVE/outputs/m04_stage1_authoritative_expanded" \
         --candidates m04_baseline_120hz_q2 m04_a_75hz_q2 m04_b_50hz_q2
 """

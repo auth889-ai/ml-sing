@@ -8,7 +8,7 @@ Output root: `$DRIVE/outputs/m04_stage1_authoritative_expanded/`
 ## Fairness audit
 
 A latent-rate comparison is evidence only if the candidates differed in exactly
-one thing. `scripts/m04_fairness_audit.py` re-derives that from the run
+one thing. `scripts/audit_codec_sweep_fairness.py` re-derives that from the run
 artifacts rather than trusting the launch command. **17 / 17 checks PASS,
 `fair: true`.**
 
@@ -183,7 +183,7 @@ are comparable *to each other*, which is what the experiment requires.
 ## Listening comparison
 
 Same held-out source file per category for every candidate — verified by the
-fairness audit, and `m04_listening_matrix.py` refuses to emit a row whose
+fairness audit, and `build_listening_matrix.py` refuses to emit a row whose
 candidates reconstructed different audio. Instrument identity comes from the
 BabySlakh `metadata.yaml`, never from spectral heuristics.
 
@@ -289,5 +289,5 @@ All Stage 1 evidence is preserved and unmodified.
 
 M05 — Musical Representation & Tokenization **not started**.
 
-Related: [M04_DATA_EXPANSION.md](M04_DATA_EXPANSION.md),
-[M03_RESULT_FROZEN.md](M03_RESULT_FROZEN.md) (unmodified).
+Related: [CODEC_DATA_EXPANSION.md](CODEC_DATA_EXPANSION.md),
+[CODEC_RESULTS_FROZEN.md](CODEC_RESULTS_FROZEN.md) (unmodified).

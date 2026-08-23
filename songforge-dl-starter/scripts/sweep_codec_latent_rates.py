@@ -9,7 +9,7 @@ constant depth (120 / 75 / 50 Hz, Q=2). Stage 2 is only worth running if the
 lower rates give up too much quality, and asks whether extra codebook depth buys
 it back at comparable bitrate.
 
-    python scripts/m04_codec_sweep.py --stage 1 \
+    python scripts/sweep_codec_latent_rates.py --stage 1 \
         --train-manifest "$SONGFORGE_DATA/processed/babyslakh_m02/manifests/train.jsonl" \
         --val-manifest   "$SONGFORGE_DATA/processed/babyslakh_m02/manifests/val.jsonl" \
         --output-root    "$DRIVE_ROOT/outputs/m04_codec_sweep" \

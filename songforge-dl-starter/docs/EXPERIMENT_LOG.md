@@ -9,7 +9,7 @@ Reason: this Codex environment cannot sign into or operate the requested Google 
 Exact Colab command template:
 
 ```bash
-python scripts/colab_m03_acceptance.py \
+python scripts/run_codec_acceptance.py \
   --config configs/codec/codec_m03_tiny.yaml \
   --audio-glob "$SONGFORGE_DATA/raw/babyslakh/**/*.wav" \
   --output-dir "$DRIVE_ROOT/outputs/codec_m03_acceptance" \
@@ -51,8 +51,8 @@ Optimization target: perceptual reconstruction quality + low token/latent rate +
 
 ## M04 — High-Quality Codec Optimization & Latent-Rate Selection: Stage 1 authoritative
 
-Full evidence: [M04_STAGE1_RESULT.md](M04_STAGE1_RESULT.md).
-Corpus: [M04_DATA_EXPANSION.md](M04_DATA_EXPANSION.md).
+Full evidence: [CODEC_LATENT_RATE_RESULTS.md](CODEC_LATENT_RATE_RESULTS.md).
+Corpus: [CODEC_DATA_EXPANSION.md](CODEC_DATA_EXPANSION.md).
 
 Ran the proposed matrix's first three rows at equal 4000-step budgets on an
 expanded 20-track / 229-WAV / 17,558-segment BabySlakh corpus, not the 11-song
