@@ -41,7 +41,11 @@ export default function Page() {
   const [key, setKey] = useState("");
   const [timeSignature, setTimeSignature] = useState("");
   const [language, setLanguage] = useState("en");
-  const [seed, setSeed] = useState("0");
+  // A fixed default seed makes every run of the same prompt return byte-identical
+  // audio, which reads as "the model only knows one song". Reproducibility is
+  // opt-in instead: randomise per render unless the user pins a seed.
+  const [seed, setSeed] = useState("");
+  const [lockSeed, setLockSeed] = useState(false);
   const [advanced, setAdvanced] = useState(false);
 
   const [limits, setLimits] = useState<Limits | null>(null);
@@ -64,9 +68,15 @@ export default function Page() {
   async function onGenerate() {
     setError(null);
     setJob(null);
+    const usedSeed =
+      lockSeed && seed.trim() !== ""
+        ? Number(seed)
+        : Math.floor(Math.random() * 2_147_483_647);
+    if (!lockSeed) setSeed(String(usedSeed));
+
     const body: GenerateBody = {
       prompt: prompt.trim(),
-      seed: Number(seed) || 0,
+      seed: usedSeed,
       duration_seconds: Number(duration) || undefined,
       vocal_language: language || undefined,
     };
@@ -198,8 +208,31 @@ export default function Page() {
           </div>
           <div>
             <label htmlFor="seed">Seed</label>
-            <input id="seed" type="number" value={seed} onChange={(e) => setSeed(e.target.value)} />
-            <div className="hint">Same inputs + seed → same song</div>
+            <input
+              id="seed"
+              type="number"
+              value={seed}
+              placeholder="random each time"
+              onChange={(e) => setSeed(e.target.value)}
+            />
+            <label
+              htmlFor="lockseed"
+              style={{ display: "flex", gap: 7, alignItems: "center", marginTop: 7 }}
+            >
+              <input
+                id="lockseed"
+                type="checkbox"
+                checked={lockSeed}
+                onChange={(e) => setLockSeed(e.target.checked)}
+                style={{ width: "auto" }}
+              />
+              Lock this seed
+            </label>
+            <div className="hint">
+              {lockSeed
+                ? "Locked — same prompt returns the same song."
+                : "New seed every render, so each song differs."}
+            </div>
           </div>
         </div>
 
