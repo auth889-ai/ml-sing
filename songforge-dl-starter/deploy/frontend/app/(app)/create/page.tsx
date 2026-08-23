@@ -8,7 +8,15 @@
 // silently does nothing is worse than a missing knob.
 
 import { useEffect, useRef, useState } from "react";
-import { capabilities, submit, waitFor, type GenerateBody, type JobState } from "../../../lib/api";
+import {
+  capabilities,
+  submit,
+  waitFor,
+  backendStatus,
+  type BackendStatus,
+  type GenerateBody,
+  type JobState,
+} from "../../../lib/api";
 import { saveSong } from "../../../lib/library";
 
 interface Limits {
@@ -37,6 +45,7 @@ export default function Page() {
   const [advanced, setAdvanced] = useState(false);
 
   const [limits, setLimits] = useState<Limits | null>(null);
+  const [backend, setBackend] = useState<BackendStatus | null>(null);
   const [job, setJob] = useState<JobState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +55,11 @@ export default function Page() {
     capabilities()
       .then((c) => setLimits(c.limits as Limits))
       .catch(() => setLimits(null)); // backend warming up; submit still validates server-side
+    backendStatus().then(setBackend);
   }, []);
+
+  const offline = backend !== null && !backend.reachable;
+  const modelDown = backend?.reachable === true && backend.modelLoaded === false;
 
   async function onGenerate() {
     setError(null);
@@ -108,6 +121,29 @@ export default function Page() {
           originality, then mastered to WAV and MP3.
         </p>
       </header>
+
+      {offline && (
+        <div className="note note-warn" style={{ marginBottom: 16 }}>
+          <strong>No GPU backend is connected to this deployment.</strong>
+          <p style={{ marginTop: 6 }}>
+            The interface below is fully functional, but generation needs a machine with a
+            GPU behind it. Point this deployment at one by setting{" "}
+            <code>SONGFORGE_API_URL</code>, or run the backend locally — the procedure is in{" "}
+            <code>deploy/RUNBOOK.md</code>.
+          </p>
+        </div>
+      )}
+
+      {modelDown && (
+        <div className="note note-warn" style={{ marginBottom: 16 }}>
+          <strong>The backend is reachable but its model is not loaded.</strong>
+          {backend?.detail && (
+            <p style={{ marginTop: 6, fontFamily: "ui-monospace, monospace", fontSize: "0.78rem" }}>
+              {backend.detail}
+            </p>
+          )}
+        </div>
+      )}
 
       <section className="card">
         <label htmlFor="prompt">Prompt — instruments, style, mood</label>
@@ -201,8 +237,8 @@ export default function Page() {
         )}
 
         <div style={{ marginTop: 18 }}>
-          <button onClick={onGenerate} disabled={busy || !prompt.trim()}>
-            {busy ? "Generating…" : "Generate song"}
+          <button onClick={onGenerate} disabled={busy || !prompt.trim() || offline}>
+            {busy ? "Generating…" : offline ? "Backend not connected" : "Generate song"}
           </button>
         </div>
 

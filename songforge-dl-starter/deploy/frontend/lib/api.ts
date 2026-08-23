@@ -39,13 +39,56 @@ export interface JobState {
 
 const BASE = "/api/songforge";
 
+/** Whether this deployment has a reachable GPU backend behind it. */
+export type BackendStatus =
+  | { reachable: true; modelLoaded: boolean; detail?: string }
+  | { reachable: false; detail: string };
+
+/**
+ * A frontend can be deployed without a GPU host behind it — that is the normal
+ * state for a preview or a demo link. Probing once on load lets the UI say so
+ * plainly, instead of letting the first click return a bare "HTTP 500" that
+ * reads as a broken product rather than an unconfigured one.
+ */
+export async function backendStatus(): Promise<BackendStatus> {
+  try {
+    const res = await fetch(`${BASE}/capabilities`, { cache: "no-store" });
+    if (!res.ok) {
+      return {
+        reachable: false,
+        detail: `The generation backend answered ${res.status}.`,
+      };
+    }
+    const body = await res.json();
+    return {
+      reachable: true,
+      modelLoaded: body?.model_loaded !== false,
+      detail: typeof body?.model_error === "string" ? body.model_error : undefined,
+    };
+  } catch {
+    return {
+      reachable: false,
+      detail: "No GPU backend is connected to this deployment.",
+    };
+  }
+}
+
 export async function submit(body: GenerateBody): Promise<JobState> {
   const res = await fetch(`${BASE}/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({} as Record<string, unknown>));
+    // 5xx from this route almost always means the proxy could not reach the GPU
+    // host at all. Say that, rather than surfacing the status code by itself.
+    const fallback =
+      res.status >= 500
+        ? "The generation backend is not reachable from this deployment."
+        : `Request failed (HTTP ${res.status}).`;
+    throw new Error((body as { detail?: string }).detail ?? fallback);
+  }
   return res.json();
 }
 
