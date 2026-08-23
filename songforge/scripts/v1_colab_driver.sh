@@ -4,7 +4,7 @@
 # Every stage writes a marker to Drive on success and is skipped on rerun, so
 # after any runtime drop the SAME command continues where it left off:
 #
-#   cd /content/ml-sing/songforge-dl-starter && bash scripts/v1_colab_driver.sh
+#   cd /content/ml-sing/songforge && bash scripts/v1_colab_driver.sh
 #
 # Experiment identity is frozen by benchmarks/EXPERIMENT_CARD.md. This script
 # executes it; it does not decide anything.

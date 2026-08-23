@@ -15,7 +15,7 @@ The notebook supports two delivery modes, set by `SETUP_MODE` in cell 1.
 1. On the workstation, build the archive from the repository root:
 
    ```bash
-   zip -r songforge-colab.zip songforge-dl-starter \
+   zip -r songforge-colab.zip songforge \
      -x '*/.venv/*' '*/__pycache__/*' '*.pyc' '*/.pytest_cache/*' '*/.ruff_cache/*' \
         '*.egg-info/*' '*/outputs/*' '*/data/raw/*' '*/data/processed/*' '*/checkpoints/*' \
         '*.pt' '*.wav' '*.DS_Store'

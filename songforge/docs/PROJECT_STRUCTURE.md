@@ -22,7 +22,7 @@ never means touching data.
 ## 1. Repository
 
 ```
-songforge-dl-starter/
+songforge/
 ├── src/songforge/
 │   ├── data/                    # corpus → canonical manifest
 │   │   ├── manifest.py          # AudioRecord: THE schema. One, project-wide.

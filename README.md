@@ -106,7 +106,7 @@ V2 extends training to the full six-family corpus above.
 
 ```bash
 git clone https://github.com/auth889-ai/ml-sing.git
-cd ml-sing/songforge-dl-starter
+cd ml-sing/songforge
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 pytest -q            # 288 passed, 2 skipped
@@ -131,14 +131,14 @@ cd deploy/frontend
 vercel deploy --prod
 ```
 
-Full procedure, including the verified flash-attn wheel and the environment pins that matter, is in [`deploy/RUNBOOK.md`](songforge-dl-starter/deploy/RUNBOOK.md).
+Full procedure, including the verified flash-attn wheel and the environment pins that matter, is in [`deploy/RUNBOOK.md`](songforge/deploy/RUNBOOK.md).
 
 ---
 
 ## Repository map
 
 ```
-songforge-dl-starter/
+songforge/
   src/songforge/
     generation/planner.py      free-form prompt → typed musical controls
     generation/adapters/       adapter loading; hard-fails on 0 matched modules
@@ -154,10 +154,10 @@ songforge-dl-starter/
   benchmarks/                  frozen experiment cards, regression prompts
 ```
 
-Documentation index: [`docs/`](songforge-dl-starter/docs) — corpus definition in
-[`configs/datasets/v2_sprint.yaml`](songforge-dl-starter/configs/datasets/v2_sprint.yaml),
-attribution in [`docs/ATTRIBUTION.md`](songforge-dl-starter/docs/ATTRIBUTION.md),
-deployment in [`deploy/RUNBOOK.md`](songforge-dl-starter/deploy/RUNBOOK.md).
+Documentation index: [`docs/`](songforge/docs) — corpus definition in
+[`configs/datasets/v2_sprint.yaml`](songforge/configs/datasets/v2_sprint.yaml),
+attribution in [`docs/ATTRIBUTION.md`](songforge/docs/ATTRIBUTION.md),
+deployment in [`deploy/RUNBOOK.md`](songforge/deploy/RUNBOOK.md).
 
 ---
 

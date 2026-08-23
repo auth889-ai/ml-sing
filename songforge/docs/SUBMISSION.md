@@ -161,7 +161,7 @@ inference from a falling loss curve.
 
 ```bash
 git clone https://github.com/auth889-ai/ml-sing.git
-cd ml-sing/songforge-dl-starter
+cd ml-sing/songforge
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 pytest -q                      # 288 passed, 2 skipped
