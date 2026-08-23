@@ -8,8 +8,8 @@
 // silently does nothing is worse than a missing knob.
 
 import { useEffect, useRef, useState } from "react";
-import { capabilities, submit, waitFor, type GenerateBody, type JobState } from "../lib/api";
-import { saveSong } from "../lib/library";
+import { capabilities, submit, waitFor, type GenerateBody, type JobState } from "../../../lib/api";
+import { saveSong } from "../../../lib/library";
 
 interface Limits {
   min_duration_seconds: number;

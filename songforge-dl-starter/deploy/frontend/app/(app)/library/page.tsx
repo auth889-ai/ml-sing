@@ -16,7 +16,7 @@ import {
   audioUrlFor,
   formatWhen,
   type SavedSong,
-} from "../../lib/library";
+} from "../../../lib/library";
 
 export default function LibraryPage() {
   const [songs, setSongs] = useState<SavedSong[]>([]);

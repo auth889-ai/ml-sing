@@ -12,10 +12,10 @@ import Link from "next/link";
 import { listSongs, formatWhen, type SavedSong } from "../lib/library";
 
 const NAV = [
-  { href: "/", icon: "✦", label: "Create" },
+  { href: "/create", icon: "✦", label: "Create" },
   { href: "/library", icon: "◍", label: "Library" },
-  { href: "/how-it-works", icon: "◇", label: "How it works" },
-  { href: "/data", icon: "◈", label: "Data & licensing" },
+  
+  { href: "/", icon: "←", label: "Back to site" },
 ];
 
 export default function Sidebar() {
