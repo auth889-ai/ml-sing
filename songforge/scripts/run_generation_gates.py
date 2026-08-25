@@ -157,6 +157,15 @@ class Foundation:
 
     def load(self):
         sys.path.insert(0, self.ace_dir)
+
+        # ACE-Step finds models through its OWN resolver, not through anything
+        # we pass in: get_checkpoints_dir() consults ACESTEP_CHECKPOINTS_DIR and
+        # otherwise falls back to <project_root>/checkpoints. With 28 GB sitting
+        # in our directory and the env var unset, it scanned the ACE-Step repo
+        # instead, found nothing, and reported "the weight download did not
+        # complete" -- which was false and pointed at the wrong problem.
+        os.environ["ACESTEP_CHECKPOINTS_DIR"] = str(Path(self.ckpt_dir).resolve())
+        self.report.set(acestep_checkpoints_dir=os.environ["ACESTEP_CHECKPOINTS_DIR"])
         from acestep.handler import AceStepHandler
         from acestep.llm_inference import LLMHandler
 
@@ -166,9 +175,10 @@ class Foundation:
         models = self.dit.get_available_acestep_v15_models() or []
         self.report.set(available_models=models)
         if not models:
+            present = sorted(p.name for p in Path(self.ckpt_dir).glob("*"))[:20]
             raise SystemExit(
-                f"no ACE-Step v1.5 models found under {self.ckpt_dir}. "
-                "The weight download did not complete.")
+                f"no directories named acestep-v15-* under {self.ckpt_dir}.\n"
+                f"present: {present}")
 
         # Prefer the turbo variant the project trained against; fall back to
         # whatever is present rather than failing on an exact name.

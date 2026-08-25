@@ -159,9 +159,15 @@ PYDEP
   xargs -a /tmp/acestep_deps.txt -d '\n' uv pip install --python "$PY" --quiet \
     || { echo "FATAL: dependency install failed"; return 1; }
 
+  # ACE-Step logs these as warnings and carries on, so a missing PEFT/LyCORIS
+  # only bites later as "LoKr training/inference unavailable" -- at which point
+  # our adapter silently cannot load and V1 looks identical to base.
+  uv pip install --python "$PY" --quiet peft lycoris-lora \
+    || { echo "FATAL: peft/lycoris install failed"; return 1; }
+
   # Import the things whose absence previously surfaced only at model-load
   # time, so a broken environment fails here instead of after a 28 GB download.
-  "$PY" -c "import numpy, soundfile, loguru; print('core deps ok')" \
+  "$PY" -c "import numpy, soundfile, loguru, peft, lycoris; print('core deps ok')" \
     || { echo "FATAL: core dependencies missing after install"; return 1; }
 
   "$PY" -c "import acestep, pathlib; print('acestep ok at', pathlib.Path(acestep.__file__).parent)"
