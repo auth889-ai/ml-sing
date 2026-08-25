@@ -112,26 +112,89 @@ def audio_path(root: Path, tid: int) -> Path:
     return root / f"{tid // 1000:03d}" / f"{tid:06d}.mp3"
 
 
+ARCS = [
+    "It opens sparsely and gathers density toward a full, sustained finish.",
+    "The arrangement starts thin and grows steadily into its final section.",
+    "It holds a consistent groove from beginning to end.",
+    "It rises through the middle section, then resolves back to a quieter close.",
+    "The piece swells toward its centre before easing away at the end.",
+    "It begins at full strength and gradually thins out toward the end.",
+]
+
+# Instrument vocabulary per genre. Every entry is what the genre ordinarily
+# CONTAINS, not a guess about a specific file: naming a trumpet that is not in
+# the audio would teach the model that the word "trumpet" means nothing, which
+# is worse than saying less.
+GENRE_INSTRUMENTS = {
+    "rock": ["electric guitars", "bass", "live drums"],
+    "electronic": ["synth bass", "electronic drums", "atmospheric pads"],
+    "folk": ["acoustic guitar", "soft percussion", "close-mic'd vocals"],
+    "hip-hop": ["sampled drums", "deep bass", "spoken vocal delivery"],
+    "pop": ["layered vocals", "bright synths", "programmed drums"],
+    "jazz": ["upright bass", "brushed drums", "piano"],
+    "classical": ["string ensemble", "piano", "woodwinds"],
+    "experimental": ["processed textures", "irregular percussion", "drones"],
+    "instrumental": ["layered instrumentation"],
+    "international": ["regional percussion", "melodic strings"],
+    "blues": ["electric guitar", "bass", "shuffling drums"],
+    "country": ["acoustic guitar", "pedal steel", "brushed drums"],
+    "soul-rnb": ["electric piano", "warm bass", "tight drums"],
+    "spoken": ["spoken voice", "sparse backing"],
+    "old-time / historic": ["acoustic string band", "period recording character"],
+    "easy listening": ["strings", "light percussion"],
+}
+
+
+def humanise(items: list[str]) -> str:
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f" and {items[-1]}"
+
+
 def caption_for(meta: dict, rng: random.Random) -> str:
+    """Compose a narrative caption in ACE-Step's own conditioning register.
+
+    Length is the point as much as content. The foundation was trained on
+    roughly forty words of prose describing energy, instrumentation and how the
+    piece moves through time. A twelve-word caption is closer to a tag list,
+    and a corpus of those reproduces V1's failure -- a text field carrying so
+    little information that the model learns to ignore it.
+    """
     genre = (meta.get("genre") or "instrumental").strip().lower() or "instrumental"
     energy = rng.choice(["low", "medium", "high"])
-    text = rng.choice(OPENERS).format(energy=rng.choice(ENERGY[energy]),
-                                      genre=genre, mood=rng.choice(MOODS),
-                                      noun=rng.choice(NOUNS))
-    parts = [text]
+    mood = rng.choice(MOODS)
+
+    parts = [rng.choice(OPENERS).format(energy=rng.choice(ENERGY[energy]),
+                                        genre=genre, mood=mood,
+                                        noun=rng.choice(NOUNS))]
+
+    instruments = GENRE_INSTRUMENTS.get(genre)
+    if instruments:
+        picked = instruments[:3]
+        lead, rest = picked[0], picked[1:]
+        parts.append(rng.choice(["led by {}", "built around {}",
+                                 "carried by {}", "with {} taking the lead"]).format(lead))
+        if rest:
+            parts.append(rng.choice(["supported by {}", "underpinned by {}",
+                                     "alongside {}"]).format(humanise(rest)))
+
     if meta.get("artist"):
         parts.append(f"performed by {meta['artist']}")
+
     sentence = ", ".join(parts) + "."
-    tail = [rng.choice(PRODUCTION)]
+    tail = [rng.choice(ARCS), rng.choice(PRODUCTION)]
     caption = " ".join([sentence, *tail])
-    # "A unhurried folk song" -- the opener is picked before the adjective is
+
+    # "A unhurried folk song" -- the opener is chosen before the adjective is
     # known, so the article has to be corrected against what actually follows.
     import re
-    return re.sub(r"\b([Aa]n?)\s+(\w+)",
-                  lambda m: (("an" if m.group(2)[0].lower() in "aeiou" else "a")
-                             .capitalize() if m.group(1)[0].isupper()
-                             else ("an" if m.group(2)[0].lower() in "aeiou" else "a"))
-                  + " " + m.group(2), caption)
+    def fix(m):
+        art, word = m.group(1), m.group(2)
+        fixed = "an" if word[0].lower() in "aeiou" else "a"
+        return (fixed.capitalize() if art[0].isupper() else fixed) + " " + word
+    return re.sub(r"\b([Aa]n?)\s+(\w+)", fix, caption)
 
 
 def main() -> int:
