@@ -74,6 +74,10 @@ s3_venv () {
   export PATH="$HOME/.local/bin:$PATH"
   command -v uv >/dev/null 2>&1 || { echo "FATAL: uv not on PATH"; return 1; }
 
+  # A venv left over from an earlier attempt can hold a mismatched torchaudio
+  # that no amount of reinstalling torch will correct, so honour an explicit
+  # rebuild request rather than trusting whatever is already there.
+  if [ "${REBUILD_VENV:-0}" = "1" ]; then rm -rf "$VENV"; fi
   if [ ! -x "$PY" ]; then
     uv python install 3.12 || return 1
     uv venv --python 3.12 "$VENV" || return 1
@@ -81,10 +85,24 @@ s3_venv () {
   "$PY" -c "import sys; assert sys.version_info[:2]==(3,12), sys.version" || return 1
   say "interpreter: $($PY -V)"
 
-  # torch 2.10.0+cu128 is the pair V1 was verified against on this hardware.
+  # BOTH pinned, to the same minor. Pinning torch alone let uv resolve a
+  # torchaudio built against a newer torch, and the mismatch does not surface
+  # at install time -- it surfaces much later as
+  #   libtorchaudio.abi3.so: undefined symbol: torch_dtype_float4_e2m1fn_x2
+  # while ACE-Step's handler is importing, after the 28 GB download.
   uv pip install --python "$PY" --quiet \
-      "torch==2.10.0" torchaudio --index-url https://download.pytorch.org/whl/cu128 \
+      "torch==2.10.0" "torchaudio==2.10.0" \
+      --index-url https://download.pytorch.org/whl/cu128 \
     || return 1
+
+  # Prove the pair actually links before anything downstream depends on it.
+  "$PY" - <<'EOF'
+import torch, torchaudio
+print("torch", torch.__version__, "torchaudio", torchaudio.__version__)
+assert torch.__version__.split("+")[0].rsplit(".", 1)[0] == \
+       torchaudio.__version__.split("+")[0].rsplit(".", 1)[0], \
+       "torch/torchaudio minor mismatch"
+EOF
   "$PY" - <<'EOF'
 import torch
 print("torch", torch.__version__, "cuda", torch.version.cuda)
