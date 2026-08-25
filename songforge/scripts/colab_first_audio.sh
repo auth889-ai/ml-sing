@@ -10,6 +10,15 @@
 # goal is the single unanswered question -- does the foundation generate audio
 # on this machine.
 #
+# ON PYTHON
+# Colab's image ships Python 3.13.15. ACE-Step requires <3.13 and so does
+# nano-vllm, so BOTH refuse to install on the stock interpreter -- pip reports
+# "requires a different Python" and acestep never lands, whatever else is
+# fixed. The notebook kernel therefore stays 3.13 and is used only as a shell;
+# a 3.12 interpreter is provisioned with uv and every real command runs through
+# it. This mirrors provision_python312_training_env.sh, minus flash-attn, which
+# that script needs for training and inference does not.
+#
 # ON THE FREE TIER SPECIFICALLY
 # A free T4 is compute capability 7.5, so bf16 is emulated and this model
 # produces NaNs in it. The gate selects fp16 automatically, which is native
@@ -26,6 +35,8 @@ PROJECT="$REPO/songforge"
 ACE=/content/ACE-Step-1.5
 CKPT=/content/checkpoints
 DRIVE=/content/drive/MyDrive/songforge-dl
+VENV=/content/venv-py312-acestep
+PY="$VENV/bin/python"
 MARK=/content/.first_audio_markers
 mkdir -p "$MARK" "$CKPT"
 export MPLBACKEND=Agg
@@ -56,80 +67,88 @@ s2_repo () {
   [ -d "$PROJECT" ] || { echo "FATAL: $PROJECT missing"; return 1; }
 }
 
-s3_acestep () {
+s3_venv () {
+  if ! command -v uv >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
+  fi
+  export PATH="$HOME/.local/bin:$PATH"
+  command -v uv >/dev/null 2>&1 || { echo "FATAL: uv not on PATH"; return 1; }
+
+  if [ ! -x "$PY" ]; then
+    uv python install 3.12 || return 1
+    uv venv --python 3.12 "$VENV" || return 1
+  fi
+  "$PY" -c "import sys; assert sys.version_info[:2]==(3,12), sys.version" || return 1
+  say "interpreter: $($PY -V)"
+
+  # torch 2.10.0+cu128 is the pair V1 was verified against on this hardware.
+  uv pip install --python "$PY" --quiet \
+      "torch==2.10.0" torchaudio --index-url https://download.pytorch.org/whl/cu128 \
+    || return 1
+  "$PY" - <<'EOF'
+import torch
+print("torch", torch.__version__, "cuda", torch.version.cuda)
+assert torch.cuda.is_available(), "venv torch cannot see the GPU"
+cap = torch.cuda.get_device_capability(0)
+print(f"gpu {torch.cuda.get_device_name(0)}  cc {cap[0]}.{cap[1]}  bf16 native: {cap[0] >= 8}")
+EOF
+}
+
+s4_acestep () {
+  export PATH="$HOME/.local/bin:$PATH"
   if [ -d "$ACE/.git" ]; then git -C "$ACE" pull -q --ff-only || true
   else git clone -q https://github.com/ace-step/ACE-Step-1.5 "$ACE"; fi
 
-  # ACE-Step declares nano-vllm, which is NOT published on PyPI -- it exists
-  # only on GitHub. A plain `pip install -e .` therefore fails outright with
-  # "No matching distribution found", and takes the whole install with it.
-  # Try the real source first.
-  pip install -q "nano-vllm @ git+https://github.com/GeeeekExplorer/nano-vllm.git" \
-    2>&1 | tail -2 || say "nano-vllm from git failed; will install without it"
+  # On 3.12 this resolves; it was only ever rejected for the Python version.
+  uv pip install --python "$PY" --quiet \
+      "nano-vllm @ git+https://github.com/GeeeekExplorer/nano-vllm.git" \
+    2>&1 | tail -2 || say "nano-vllm unavailable; continuing without it"
 
-  # Colab already ships a working torch/CUDA for the attached GPU; installing
-  # our own would waste ten minutes and risk breaking a stack already correct.
-  # Installed --no-deps deliberately, not as a fallback. A plain editable
-  # install re-resolves flash-attn and nano-vllm every time and fails on both,
-  # so trying it first only costs minutes before landing here anyway.
-  if true; then
-    say "installing ACE-Step without dependency resolution"
-    # --no-deps skips the unresolvable pin, then every OTHER declared
-    # dependency is installed explicitly. Installing --no-deps alone would
-    # leave a package that imports and then fails at the first real call.
-    pip install -q -e "$ACE" --no-deps 2>&1 | tail -2
-    python - "$ACE" <<'PYDEP'
+  # Still --no-deps + explicit list: flash-attn has no wheel for this pair and
+  # compiling it costs about an hour before failing, and it is not needed for
+  # inference (ACE-Step falls back to PyTorch SDPA).
+  uv pip install --python "$PY" --quiet --no-deps -e "$ACE" 2>&1 | tail -2
+  "$PY" - "$ACE" <<'PYDEP'
 import re, subprocess, sys, pathlib
 root = pathlib.Path(sys.argv[1])
-deps = []
-pyproject = root / "pyproject.toml"
+deps, pyproject = [], root / "pyproject.toml"
 if pyproject.exists():
-    text = pyproject.read_text(encoding="utf-8")
-    block = re.search(r"dependencies\s*=\s*\[(.*?)\]", text, re.S)
+    block = re.search(r"dependencies\s*=\s*\[(.*?)\]",
+                      pyproject.read_text(encoding="utf-8"), re.S)
     if block:
         deps = re.findall(r'"([^"]+)"', block.group(1))
 if not deps and (root / "requirements.txt").exists():
     deps = [l.strip() for l in (root / "requirements.txt").read_text().splitlines()
             if l.strip() and not l.startswith("#")]
 
-# Three classes of dependency are deliberately skipped.
-#   nano-vllm   -- not on PyPI at all, installed separately from git above.
-#   flash-attn  -- has no wheel for this interpreter/CUDA pair, so pip falls
-#                  back to compiling it, which takes about an hour and then
-#                  fails ("Failed building wheel for flash-attn", observed on
-#                  a Colab T4). Inference does not need it; ACE-Step falls
-#                  back to PyTorch scaled_dot_product_attention.
-#   torch*      -- Colab ships builds matched to the attached driver, and
-#                  replacing them risks a stack that no longer matches.
 skip = ("nano-vllm", "nano_vllm", "flash-attn", "flash_attn",
         "torch", "torchaudio", "torchvision")
 wanted = [d for d in deps if not any(d.lower().startswith(s) for s in skip)]
 print(f"installing {len(wanted)} of {len(deps)} declared dependencies", flush=True)
 for dep in wanted:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", dep],
-                   check=False)
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", dep], check=False)
 PYDEP
-  fi
 
-  python -c "import acestep, pathlib; print('acestep ok at', pathlib.Path(acestep.__file__).parent)"
+  "$PY" -c "import acestep, pathlib; print('acestep ok at', pathlib.Path(acestep.__file__).parent)"
 }
 
-s4_weights () {
+s5_weights () {
   cd "$ACE" || return 1
-  python -m acestep.model_downloader --dir "$CKPT"
-  python -m acestep.model_downloader --model acestep-v15-xl-turbo --dir "$CKPT"
+  "$PY" -m acestep.model_downloader --dir "$CKPT"
+  "$PY" -m acestep.model_downloader --model acestep-v15-xl-turbo --dir "$CKPT"
   ln -sfn "$CKPT/acestep-v15-xl-turbo" "$CKPT/xl_turbo"
   du -sh "$CKPT"
 }
 
 step s1_gpu      s1_gpu
 step s2_repo     s2_repo
-step s3_acestep  s3_acestep
-step s4_weights  s4_weights
+step s3_venv     s3_venv
+step s4_acestep  s4_acestep
+step s5_weights  s5_weights
 
 say "running base gate -> $OUT"
 cd "$PROJECT" || exit 1
-PYTHONPATH=src python scripts/run_generation_gates.py \
+PYTHONPATH=src "$PY" scripts/run_generation_gates.py \
     --stage base --ace-dir "$ACE" --checkpoint-dir "$CKPT" \
     --out "$OUT" --duration 30
 status=$?
