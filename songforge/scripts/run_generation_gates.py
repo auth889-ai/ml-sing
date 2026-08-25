@@ -310,7 +310,7 @@ class Foundation:
         if not getattr(result, "success", False):
             self.report.set(generate_error=str(getattr(result, "error", ""))[:400],
                             generate_status=str(getattr(result, "status_message", ""))[:300])
-            return {"ok": False, "seconds": elapsed}
+            return {"ok": False, "render_seconds": elapsed}
 
         produced = [Path(a["path"]) for a in (result.audios or [])
                     if isinstance(a, dict) and a.get("path")
@@ -319,11 +319,11 @@ class Foundation:
             produced = sorted(workdir.rglob("*.wav")) + sorted(workdir.rglob("*.flac"))
         if not produced:
             self.report.set(generate_no_files=str(getattr(result, "status_message", ""))[:300])
-            return {"ok": False, "seconds": elapsed}
+            return {"ok": False, "render_seconds": elapsed}
 
         biggest = max(produced, key=lambda p: p.stat().st_size)
         biggest.replace(out_wav)
-        return {"ok": True, "seconds": elapsed, "wav": str(out_wav),
+        return {"ok": True, "render_seconds": elapsed, "wav": str(out_wav),
                 "bytes": out_wav.stat().st_size,
                 "status": str(getattr(result, "status_message", ""))[:200]}
 
