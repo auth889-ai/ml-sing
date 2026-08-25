@@ -93,14 +93,6 @@ class Report:
             pass
 
 
-def find_callable(obj, *hints):
-    names = [n for n in dir(obj)
-             if not n.startswith("_") and callable(getattr(obj, n, None))]
-    hits = [n for n in names if any(h in n.lower() for h in hints)]
-    hits.sort(key=len)
-    return [(n, getattr(obj, n)) for n in hits]
-
-
 def adapter_key_count(path: Path) -> tuple[int, list[str]]:
     """Count LoKr/LoRA tensors in an adapter checkpoint, without a GPU."""
     import torch
@@ -139,47 +131,71 @@ def adapter_key_count(path: Path) -> tuple[int, list[str]]:
 # ------------------------------------------------------------------ the model
 
 class Foundation:
-    """One loaded ACE-Step handler, plus whatever adapter is currently applied."""
+    """One loaded ACE-Step handler, driven through its documented public API.
+
+    An earlier version discovered the API by introspection -- listing methods
+    whose names looked like "load" or "generate" and guessing keyword names.
+    It reached the model and then failed four different ways at once, because
+    it was calling internals: service_generate() wants `captions` (plural) and
+    returns latents rather than audio, and infer_text_embeddings() needs a
+    text_encoder that only initialize_service() creates.
+
+    ACE-Step ships a supported surface -- acestep.inference.generate_music with
+    GenerationParams/GenerationConfig, which is what its own cli.py uses -- so
+    this now calls that. Guessing at internals was never going to be stable
+    across versions anyway.
+    """
 
     def __init__(self, ace_dir: str, ckpt_dir: str, dtype: str,
                  device: str, report: Report):
         self.ace_dir, self.ckpt_dir = ace_dir, ckpt_dir
         self.dtype, self.device = dtype, device
         self.report = report
-        self.handler = None
-        self.generate_fn = None
-        self.generate_name = None
+        self.dit = None
+        self.llm = None
         self.adapter_active = False
 
     def load(self):
         sys.path.insert(0, self.ace_dir)
         from acestep.handler import AceStepHandler
+        from acestep.llm_inference import LLMHandler
 
-        self.handler = AceStepHandler()
-        self.report.set(handler_methods=[n for n in dir(self.handler)
-                                         if not n.startswith("_")][:50])
+        self.dit = AceStepHandler()
+        self.llm = LLMHandler()
 
-        for name, fn in find_callable(self.handler, "load", "init", "setup", "prepare"):
-            try:
-                kwargs = {}
-                for p in inspect.signature(fn).parameters.values():
-                    low = p.name.lower()
-                    if "checkpoint" in low or "model_dir" in low or low in ("path", "dir"):
-                        kwargs[p.name] = self.ckpt_dir
-                    elif "variant" in low or low == "model":
-                        kwargs[p.name] = "xl_turbo"
-                    elif "device" in low:
-                        kwargs[p.name] = self.device
-                    elif "dtype" in low or "precision" in low:
-                        kwargs[p.name] = self.dtype
-                fn(**kwargs)
-                self.report.set(loaded_via=name, load_kwargs=kwargs)
-                return
-            except Exception as exc:  # noqa: BLE001
-                self.report.set(**{f"loader_{name}_failed":
-                                   f"{type(exc).__name__}: {exc}"[:300]})
-        raise SystemExit("no loader on AceStepHandler accepted our arguments")
+        models = self.dit.get_available_acestep_v15_models() or []
+        self.report.set(available_models=models)
+        if not models:
+            raise SystemExit(
+                f"no ACE-Step v1.5 models found under {self.ckpt_dir}. "
+                "The weight download did not complete.")
 
+        # Prefer the turbo variant the project trained against; fall back to
+        # whatever is present rather than failing on an exact name.
+        config_path = next((m for m in models if "turbo" in m.lower()), models[0])
+
+        # flash-attn is deliberately not installed (no wheel for this pair, and
+        # compiling costs about an hour), so ask the handler rather than
+        # assuming -- it falls back to PyTorch SDPA on its own.
+        use_flash = False
+        try:
+            use_flash = bool(self.dit.is_flash_attention_available(self.device))
+        except Exception:  # noqa: BLE001
+            pass
+
+        self.report.set(config_path=config_path, use_flash_attention=use_flash)
+        self.dit.initialize_service(
+            project_root=self.ace_dir,
+            config_path=config_path,
+            device=self.device,
+            use_flash_attention=use_flash,
+            compile_model=False,
+            offload_to_cpu=False,
+            offload_dit_to_cpu=False,
+        )
+        self.report.set(handler_initialised=True)
+
+    # ------------------------------------------------------------- adapters
     def apply_adapter(self, adapter_path: str, strength: float) -> int:
         """Attach the LoKr adapter and return how many modules actually matched.
 
@@ -194,36 +210,25 @@ class Foundation:
                         adapter_key_sample=sample)
         if file_keys == 0:
             raise SystemExit(
-                f"FATAL: {adapter_path} contains no LoKr/LoRA tensors. "
-                "Nothing to apply.")
+                f"FATAL: {adapter_path} contains no LoKr/LoRA tensors.")
 
-        loaders = find_callable(self.handler, "lora", "adapter", "lokr", "lycoris")
-        self.report.set(adapter_loader_candidates=[n for n, _ in loaders])
-        applied_via = None
-        for name, fn in loaders:
-            if "unload" in name.lower() or "remove" in name.lower():
-                continue
-            try:
-                kwargs = {}
-                for p in inspect.signature(fn).parameters.values():
-                    low = p.name.lower()
-                    if "path" in low or "dir" in low or "lora" in low or "adapter" in low:
-                        kwargs[p.name] = adapter_path
-                    elif "scale" in low or "strength" in low or "weight" in low or "alpha" in low:
-                        kwargs[p.name] = strength
-                fn(**kwargs)
-                applied_via = name
-                self.report.set(adapter_applied_via=name, adapter_kwargs=kwargs)
-                break
-            except Exception as exc:  # noqa: BLE001
-                self.report.set(**{f"adapter_{name}_failed":
-                                   f"{type(exc).__name__}: {exc}"[:300]})
+        # load_lora resolves LyCORIS/LoKr layouts itself and reports with a
+        # leading tick or cross rather than raising.
+        message = self.dit.load_lora(adapter_path)
+        self.report.set(adapter_load_message=message)
+        if not str(message).startswith("\u2705"):
+            raise SystemExit(f"FATAL: adapter did not load: {message}")
+
+        try:
+            self.report.set(scale_message=self.dit.set_lora_scale(strength))
+        except Exception as exc:  # noqa: BLE001
+            self.report.set(scale_unsupported=f"{type(exc).__name__}: {exc}"[:200])
 
         matched = self._count_live_modules()
         self.adapter_active = matched > 0
         self.report.set(adapter_modules_matched=matched,
                         adapter_strength=strength,
-                        adapter_applied=bool(applied_via))
+                        lora_loaded_flag=bool(getattr(self.dit, "lora_loaded", False)))
         if matched == 0:
             raise SystemExit(
                 "FATAL: adapter loaded but 0 modules matched the model. "
@@ -236,114 +241,81 @@ class Foundation:
 
         A "base" render with the adapter still quietly attached would make the
         base-vs-V1 comparison meaningless while looking entirely healthy, so
-        this verifies by counting modules rather than trusting that an unload
-        call did what its name suggests. If nothing can detach it, the handler
-        is rebuilt from scratch -- slow, and still far cheaper than publishing
-        a comparison that silently compared the adapter against itself.
+        this verifies by counting modules rather than trusting the unload call.
         """
         if not self.adapter_active:
             return
-
-        for name, fn in find_callable(self.handler, "unload", "remove",
-                                      "disable", "unfuse", "unmerge"):
-            if not any(h in name.lower()
-                       for h in ("lora", "adapter", "lokr", "lycoris")):
-                continue
-            try:
-                fn()
-                self.report.set(adapter_detached_via=name)
-                break
-            except Exception as exc:  # noqa: BLE001
-                self.report.set(**{f"detach_{name}_failed":
-                                   f"{type(exc).__name__}: {exc}"[:200]})
-
-        if self._count_live_modules() > 0:
-            self.report.set(adapter_detach="unload failed; reloading foundation")
-            self.handler = None
-            self.generate_fn = self.generate_name = None
-            self.load()
-            if self._count_live_modules() > 0:
-                raise SystemExit(
-                    "FATAL: adapter could not be detached even by reloading. "
-                    "A base render here would silently include the adapter.")
+        self.report.set(adapter_unload_message=self.dit.unload_lora())
+        remaining = self._count_live_modules()
+        if remaining > 0:
+            raise SystemExit(
+                f"FATAL: {remaining} adapter modules still attached after "
+                "unload_lora. A base render here would silently include the "
+                "adapter and corrupt the comparison.")
         self.adapter_active = False
         self.report.set(adapter_detached=True)
 
     def _count_live_modules(self) -> int:
-        """Count adapter-bearing modules on whatever model object we can find."""
-        import torch.nn as nn
+        model = getattr(self.dit, "model", None)
+        if model is None:
+            return 0
+        return sum(1 for name, _ in model.named_modules()
+                   if any(m in name.lower() for m in ("lokr", "lycoris", "lora")))
 
-        seen = 0
-        for attr in dir(self.handler):
-            if attr.startswith("_"):
-                continue
-            try:
-                obj = getattr(self.handler, attr)
-            except Exception:  # noqa: BLE001
-                continue
-            if isinstance(obj, nn.Module):
-                for mod_name, _ in obj.named_modules():
-                    if any(m in mod_name.lower()
-                           for m in ("lokr", "lycoris", "lora")):
-                        seen += 1
-                if seen:
-                    break
-        return seen
-
-    def resolve_generator(self):
-        gens = find_callable(self.handler, "generat", "text2music", "infer",
-                             "run", "sample", "predict")
-        self.report.set(generate_candidates=[n for n, _ in gens])
-        return gens
-
+    # ----------------------------------------------------------- generation
     def generate(self, caption: str, out_wav: Path, seed: int, duration: float,
                  steps: int, guidance: float) -> dict:
         """Render one take. Every knob is explicit so runs are comparable."""
+        from acestep.inference import (GenerationConfig, GenerationParams,
+                                       generate_music)
+
         out_wav.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "caption": caption, "prompt": caption, "text": caption,
-            "lyrics": "[Instrumental]",
-            "duration": duration, "audio_duration": duration,
-            "seed": seed, "manual_seeds": str(seed),
-            "infer_step": steps, "steps": steps, "num_inference_steps": steps,
-            "guidance_scale": guidance, "cfg": guidance,
-            "language": "en", "timesignature": "4/4",
-            "save_path": str(out_wav), "output_path": str(out_wav),
-            "output_dir": str(out_wav.parent),
-        }
+        workdir = out_wav.parent / f"_{out_wav.stem}"
+        workdir.mkdir(parents=True, exist_ok=True)
 
-        candidates = [(self.generate_name, self.generate_fn)] if self.generate_fn \
-            else self.resolve_generator()
+        params = GenerationParams(
+            caption=caption,
+            lyrics="[Instrumental]",
+            instrumental=True,
+            duration=duration,
+            inference_steps=steps,
+            guidance_scale=guidance,
+            seed=seed,
+            task_type="text2music",
+        )
+        # use_random_seed=False with an explicit seed list is what makes the
+        # base and V1 renders of a prompt actually comparable.
+        config = GenerationConfig(
+            batch_size=1,
+            use_random_seed=False,
+            seeds=[seed],
+            audio_format="wav",
+        )
 
-        before = {p: p.stat().st_mtime for p in out_wav.parent.rglob("*.wav")}
-        for name, fn in candidates:
-            if fn is None:
-                continue
-            try:
-                sig = inspect.signature(fn)
-                kwargs = {k: v for k, v in payload.items() if k in sig.parameters}
-                t0 = time.time()
-                result = fn(**kwargs) if kwargs else fn(caption)
-                elapsed = round(time.time() - t0, 1)
+        t0 = time.time()
+        result = generate_music(self.dit, self.llm, params, config,
+                                save_dir=str(workdir))
+        elapsed = round(time.time() - t0, 1)
 
-                fresh = [p for p in out_wav.parent.rglob("*.wav")
-                         if p not in before or p.stat().st_mtime > before[p]]
-                if not fresh and out_wav.exists():
-                    fresh = [out_wav]
-                if fresh:
-                    produced = max(fresh, key=lambda p: p.stat().st_size)
-                    if produced != out_wav:
-                        produced.replace(out_wav)
-                    self.generate_fn, self.generate_name = fn, name
-                    return {"ok": True, "method": name, "seconds": elapsed,
-                            "wav": str(out_wav), "bytes": out_wav.stat().st_size,
-                            "result_type": type(result).__name__}
-                self.report.set(**{f"{name}_no_audio": str(result)[:200]})
-            except Exception as exc:  # noqa: BLE001
-                self.report.set(**{f"gen_{name}_failed":
-                                   f"{type(exc).__name__}: {exc}"[:400]})
-                traceback.print_exc()
-        return {"ok": False}
+        if not getattr(result, "success", False):
+            self.report.set(generate_error=str(getattr(result, "error", ""))[:400],
+                            generate_status=str(getattr(result, "status_message", ""))[:300])
+            return {"ok": False, "seconds": elapsed}
+
+        produced = [Path(a["path"]) for a in (result.audios or [])
+                    if isinstance(a, dict) and a.get("path")
+                    and Path(a["path"]).exists()]
+        if not produced:
+            produced = sorted(workdir.rglob("*.wav")) + sorted(workdir.rglob("*.flac"))
+        if not produced:
+            self.report.set(generate_no_files=str(getattr(result, "status_message", ""))[:300])
+            return {"ok": False, "seconds": elapsed}
+
+        biggest = max(produced, key=lambda p: p.stat().st_size)
+        biggest.replace(out_wav)
+        return {"ok": True, "seconds": elapsed, "wav": str(out_wav),
+                "bytes": out_wav.stat().st_size,
+                "status": str(getattr(result, "status_message", ""))[:200]}
 
 
 def describe_wav(path: Path) -> dict:
