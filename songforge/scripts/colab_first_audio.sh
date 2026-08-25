@@ -59,11 +59,48 @@ s2_repo () {
 s3_acestep () {
   if [ -d "$ACE/.git" ]; then git -C "$ACE" pull -q --ff-only || true
   else git clone -q https://github.com/ace-step/ACE-Step-1.5 "$ACE"; fi
-  # Colab already ships a working torch/CUDA; installing our own would waste
-  # ten minutes and risk breaking a stack that is already correct for this GPU.
-  pip install -q -e "$ACE" 2>&1 | tail -2 || \
-    pip install -q -r "$ACE/requirements.txt" 2>&1 | tail -2 || true
-  python -c "import acestep; print('acestep ok')"
+
+  # ACE-Step declares nano-vllm, which is NOT published on PyPI -- it exists
+  # only on GitHub. A plain `pip install -e .` therefore fails outright with
+  # "No matching distribution found", and takes the whole install with it.
+  # Try the real source first.
+  pip install -q "nano-vllm @ git+https://github.com/GeeeekExplorer/nano-vllm.git" \
+    2>&1 | tail -2 || say "nano-vllm from git failed; will install without it"
+
+  # Colab already ships a working torch/CUDA for the attached GPU; installing
+  # our own would waste ten minutes and risk breaking a stack already correct.
+  if ! pip install -q -e "$ACE" 2>&1 | tail -3; then
+    say "editable install failed; retrying without dependency resolution"
+    # --no-deps skips the unresolvable pin, then every OTHER declared
+    # dependency is installed explicitly. Installing --no-deps alone would
+    # leave a package that imports and then fails at the first real call.
+    pip install -q -e "$ACE" --no-deps 2>&1 | tail -2
+    python - "$ACE" <<'PYDEP'
+import re, subprocess, sys, pathlib
+root = pathlib.Path(sys.argv[1])
+deps = []
+pyproject = root / "pyproject.toml"
+if pyproject.exists():
+    text = pyproject.read_text(encoding="utf-8")
+    block = re.search(r"dependencies\s*=\s*\[(.*?)\]", text, re.S)
+    if block:
+        deps = re.findall(r'"([^"]+)"', block.group(1))
+if not deps and (root / "requirements.txt").exists():
+    deps = [l.strip() for l in (root / "requirements.txt").read_text().splitlines()
+            if l.strip() and not l.startswith("#")]
+
+# nano-vllm is the one that cannot resolve; torch is already correct on Colab
+# and reinstalling it risks pulling a build that does not match the driver.
+skip = ("nano-vllm", "nano_vllm", "torch", "torchaudio", "torchvision")
+wanted = [d for d in deps if not any(d.lower().startswith(s) for s in skip)]
+print(f"installing {len(wanted)} of {len(deps)} declared dependencies", flush=True)
+for dep in wanted:
+    subprocess.run([sys.executable, "-m", "pip", "install", "-q", dep],
+                   check=False)
+PYDEP
+  fi
+
+  python -c "import acestep, pathlib; print('acestep ok at', pathlib.Path(acestep.__file__).parent)"
 }
 
 s4_weights () {
