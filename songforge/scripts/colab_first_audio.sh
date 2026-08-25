@@ -135,22 +135,47 @@ s4_acestep () {
   # loguru at import time, a long way from the cause.
   "$PY" - "$ACE" > /tmp/acestep_deps.txt <<'PYDEP'
 import re, sys, pathlib
+
+# BOTH files, unioned. pyproject.toml lists 23 dependencies of which 12 are
+# per-platform torch pins; requirements.txt carries the ones the model
+# actually needs at load time -- vector-quantize-pytorch, numba, torchcodec,
+# torchao, modelscope, lightning, triton. Reading pyproject alone (because it
+# happened to have a dependencies block) is why the model got all the way to
+# loading and then died on a missing vector_quantize_pytorch.
 root = pathlib.Path(sys.argv[1])
-deps, pyproject = [], root / "pyproject.toml"
+deps = []
+
+req = root / "requirements.txt"
+if req.exists():
+    for line in req.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        # '-r', '--extra-index-url' and friends are pip options, not packages.
+        if line and not line.startswith("#") and not line.startswith("-"):
+            deps.append(line)
+
+pyproject = root / "pyproject.toml"
 if pyproject.exists():
     block = re.search(r"dependencies\s*=\s*\[(.*?)\]",
                       pyproject.read_text(encoding="utf-8"), re.S)
     if block:
-        deps = re.findall(r'"([^"]+)"', block.group(1))
-if not deps and (root / "requirements.txt").exists():
-    deps = [l.strip() for l in (root / "requirements.txt").read_text().splitlines()
-            if l.strip() and not l.startswith("#")]
+        deps.extend(re.findall(r'"([^"]+)"', block.group(1)))
 
+# torch/torchaudio are pinned separately against a known-good pair; flash-attn
+# has no wheel here and compiling it fails; nano-vllm is installed from git.
+# Environment markers are left intact -- uv evaluates them, so the win32 and
+# darwin pins simply do not apply on this machine.
 skip = ("nano-vllm", "nano_vllm", "flash-attn", "flash_attn",
-        "torch", "torchaudio", "torchvision")
+        "torch==", "torchaudio==", "torchvision==", "torch>=", "torchaudio>=")
+seen, out = set(), []
 for dep in deps:
-    if not any(dep.lower().startswith(s) for s in skip):
-        print(dep)
+    key = re.split(r"[<>=;\[]", dep, 1)[0].strip().lower()
+    if any(dep.lower().startswith(s) for s in skip) or key in seen or not key:
+        continue
+    seen.add(key)
+    out.append(dep)
+
+for dep in out:
+    print(dep)
 PYDEP
 
   count=$(wc -l < /tmp/acestep_deps.txt)
@@ -167,7 +192,7 @@ PYDEP
 
   # Import the things whose absence previously surfaced only at model-load
   # time, so a broken environment fails here instead of after a 28 GB download.
-  "$PY" -c "import numpy, soundfile, loguru, peft, lycoris; print('core deps ok')" \
+  "$PY" -c "import numpy, soundfile, loguru, peft, lycoris, vector_quantize_pytorch; print('core deps ok')" \
     || { echo "FATAL: core dependencies missing after install"; return 1; }
 
   "$PY" -c "import acestep, pathlib; print('acestep ok at', pathlib.Path(acestep.__file__).parent)"
