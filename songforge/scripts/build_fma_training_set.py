@@ -239,14 +239,37 @@ def main() -> int:
     rows = []
     for tid in picked:
         m = present[tid]
+        try:
+            duration = float(m.get("duration") or 0)
+        except ValueError:
+            duration = 0.0
         rows.append({"id": f"fma_{tid:06d}",
                      "path": str(audio_path(audio_root, tid)),
                      "caption": caption_for(m, rng),
                      "lyrics": "[Instrumental]",
+                     "duration": round(duration, 2),
                      "genre": m.get("genre", ""),
                      "licence": m.get("licence", "")})
 
-    (out / "dataset.json").write_text(json.dumps(rows, indent=1))
+    # The trainer's --preprocess reads ONE metadata JSON in this exact shape --
+    # a "samples" list of audio_path/caption/lyrics/duration records under a
+    # "metadata" header. Handing it a flat list is not an error; it simply
+    # finds no samples and reports "Processed: 0/0", which looks like an empty
+    # corpus rather than a schema mismatch.
+    payload = {
+        "metadata": {"name": "songforge_fma_v2",
+                     "num_samples": len(rows),
+                     "all_instrumental": True},
+        "samples": [{"audio_path": r["path"],
+                     "filename": Path(r["path"]).name,
+                     "caption": r["caption"],
+                     "lyrics": "[Instrumental]",
+                     "is_instrumental": True,
+                     "duration": r["duration"],
+                     "language": "en",
+                     "labeled": bool(r["genre"])} for r in rows],
+    }
+    (out / "dataset.json").write_text(json.dumps(payload, indent=1))
     with (out / "manifest.jsonl").open("w", encoding="utf-8") as fh:
         for r in rows:
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
