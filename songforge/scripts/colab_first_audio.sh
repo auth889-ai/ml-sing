@@ -108,8 +108,15 @@ s4_acestep () {
   # compiling it costs about an hour before failing, and it is not needed for
   # inference (ACE-Step falls back to PyTorch SDPA).
   uv pip install --python "$PY" --quiet --no-deps -e "$ACE" 2>&1 | tail -2
-  "$PY" - "$ACE" <<'PYDEP'
-import re, subprocess, sys, pathlib
+
+  # The dependency list is PRINTED here and installed by uv below, not
+  # installed from inside Python. A uv-created venv has no pip in it, so
+  # `sys.executable -m pip install` fails with "No module named pip" -- and
+  # because that failure was swallowed per-package, it installed nothing at
+  # all while reporting success. The first sign was ModuleNotFoundError for
+  # loguru at import time, a long way from the cause.
+  "$PY" - "$ACE" > /tmp/acestep_deps.txt <<'PYDEP'
+import re, sys, pathlib
 root = pathlib.Path(sys.argv[1])
 deps, pyproject = [], root / "pyproject.toml"
 if pyproject.exists():
@@ -123,11 +130,21 @@ if not deps and (root / "requirements.txt").exists():
 
 skip = ("nano-vllm", "nano_vllm", "flash-attn", "flash_attn",
         "torch", "torchaudio", "torchvision")
-wanted = [d for d in deps if not any(d.lower().startswith(s) for s in skip)]
-print(f"installing {len(wanted)} of {len(deps)} declared dependencies", flush=True)
-for dep in wanted:
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", dep], check=False)
+for dep in deps:
+    if not any(dep.lower().startswith(s) for s in skip):
+        print(dep)
 PYDEP
+
+  count=$(wc -l < /tmp/acestep_deps.txt)
+  say "installing $count declared dependencies into the venv"
+  [ "$count" -gt 0 ] || { echo "FATAL: parsed zero dependencies from $ACE"; return 1; }
+  xargs -a /tmp/acestep_deps.txt -d '\n' uv pip install --python "$PY" --quiet \
+    || { echo "FATAL: dependency install failed"; return 1; }
+
+  # Import the things whose absence previously surfaced only at model-load
+  # time, so a broken environment fails here instead of after a 28 GB download.
+  "$PY" -c "import numpy, soundfile, loguru; print('core deps ok')" \
+    || { echo "FATAL: core dependencies missing after install"; return 1; }
 
   "$PY" -c "import acestep, pathlib; print('acestep ok at', pathlib.Path(acestep.__file__).parent)"
 }
