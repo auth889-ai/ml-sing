@@ -69,8 +69,11 @@ s3_acestep () {
 
   # Colab already ships a working torch/CUDA for the attached GPU; installing
   # our own would waste ten minutes and risk breaking a stack already correct.
-  if ! pip install -q -e "$ACE" 2>&1 | tail -3; then
-    say "editable install failed; retrying without dependency resolution"
+  # Installed --no-deps deliberately, not as a fallback. A plain editable
+  # install re-resolves flash-attn and nano-vllm every time and fails on both,
+  # so trying it first only costs minutes before landing here anyway.
+  if true; then
+    say "installing ACE-Step without dependency resolution"
     # --no-deps skips the unresolvable pin, then every OTHER declared
     # dependency is installed explicitly. Installing --no-deps alone would
     # leave a package that imports and then fails at the first real call.
@@ -89,9 +92,17 @@ if not deps and (root / "requirements.txt").exists():
     deps = [l.strip() for l in (root / "requirements.txt").read_text().splitlines()
             if l.strip() and not l.startswith("#")]
 
-# nano-vllm is the one that cannot resolve; torch is already correct on Colab
-# and reinstalling it risks pulling a build that does not match the driver.
-skip = ("nano-vllm", "nano_vllm", "torch", "torchaudio", "torchvision")
+# Three classes of dependency are deliberately skipped.
+#   nano-vllm   -- not on PyPI at all, installed separately from git above.
+#   flash-attn  -- has no wheel for this interpreter/CUDA pair, so pip falls
+#                  back to compiling it, which takes about an hour and then
+#                  fails ("Failed building wheel for flash-attn", observed on
+#                  a Colab T4). Inference does not need it; ACE-Step falls
+#                  back to PyTorch scaled_dot_product_attention.
+#   torch*      -- Colab ships builds matched to the attached driver, and
+#                  replacing them risks a stack that no longer matches.
+skip = ("nano-vllm", "nano_vllm", "flash-attn", "flash_attn",
+        "torch", "torchaudio", "torchvision")
 wanted = [d for d in deps if not any(d.lower().startswith(s) for s in skip)]
 print(f"installing {len(wanted)} of {len(deps)} declared dependencies", flush=True)
 for dep in wanted:
